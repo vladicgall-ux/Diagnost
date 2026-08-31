@@ -266,11 +266,16 @@ export default function ScannerForm({ onDiagnose, loading, obdConnected, obdRef,
         <h2 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-green-400">
           <Gauge size={16} /> Стоп-кадр (Freeze Frame)
         </h2>
+        <p className="mt-2 text-xs leading-relaxed text-gray-500">
+          «Подстройка топлива» — это на сколько процентов компьютер машины добавляет или убавляет топливо
+          по сравнению с нормой, чтобы смесь бензина и воздуха была правильной. Плюс — топлива не хватало,
+          компьютер добавил. Минус — топлива было слишком много, компьютер убавил.
+        </p>
         <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
           <Field label="Обороты (RPM)" value={freezeFrame.rpm} onChange={(v) => setFreezeFrame({ ...freezeFrame, rpm: v })} />
           <Field label="Темп. ОЖ (°C)" value={freezeFrame.coolantTemp} onChange={(v) => setFreezeFrame({ ...freezeFrame, coolantTemp: v })} />
-          <Field label="STFT (%)" value={freezeFrame.stft} onChange={(v) => setFreezeFrame({ ...freezeFrame, stft: v })} />
-          <Field label="LTFT (%)" value={freezeFrame.ltft} onChange={(v) => setFreezeFrame({ ...freezeFrame, ltft: v })} />
+          <Field label="Быстрая подстройка топлива (%)" value={freezeFrame.stft} onChange={(v) => setFreezeFrame({ ...freezeFrame, stft: v })} />
+          <Field label="Долгая подстройка топлива (%)" value={freezeFrame.ltft} onChange={(v) => setFreezeFrame({ ...freezeFrame, ltft: v })} />
           <Field label="Скорость (км/ч)" value={freezeFrame.speed} onChange={(v) => setFreezeFrame({ ...freezeFrame, speed: v })} />
           <Field label="Нагрузка двигателя (%)" value={freezeFrame.engineLoad} onChange={(v) => setFreezeFrame({ ...freezeFrame, engineLoad: v })} />
           <Field label="Давление в коллекторе (кПа)" value={freezeFrame.intakeMAP} onChange={(v) => setFreezeFrame({ ...freezeFrame, intakeMAP: v })} />
