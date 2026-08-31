@@ -83,6 +83,40 @@ function parseSpeed(raw) {
   return parseInt(bytes.slice(0, 2), 16);
 }
 
+function parseEngineLoad(raw) {
+  const bytes = extractBytes(raw, "4104");
+  if (!bytes || bytes.length < 2) return null;
+  const a = parseInt(bytes.slice(0, 2), 16);
+  return +((a * 100) / 255).toFixed(1);
+}
+
+function parseIntakeMAP(raw) {
+  const bytes = extractBytes(raw, "410B");
+  if (!bytes || bytes.length < 2) return null;
+  return parseInt(bytes.slice(0, 2), 16); // kPa, direct byte value
+}
+
+function parseThrottlePosition(raw) {
+  const bytes = extractBytes(raw, "4111");
+  if (!bytes || bytes.length < 2) return null;
+  const a = parseInt(bytes.slice(0, 2), 16);
+  return +((a * 100) / 255).toFixed(1);
+}
+
+function parseIntakeAirTemp(raw) {
+  const bytes = extractBytes(raw, "410F");
+  if (!bytes || bytes.length < 2) return null;
+  return parseInt(bytes.slice(0, 2), 16) - 40;
+}
+
+function parseMilDistance(raw) {
+  const bytes = extractBytes(raw, "4121");
+  if (!bytes || bytes.length < 4) return null;
+  const a = parseInt(bytes.slice(0, 2), 16);
+  const b = parseInt(bytes.slice(2, 4), 16);
+  return a * 256 + b; // km
+}
+
 function parseVIN(raw) {
   const clean = raw.replace(/[^0-9A-Fa-f]/g, "").toUpperCase();
   const idx = clean.indexOf("4902");
@@ -245,6 +279,11 @@ export class OBDBluetoothClient {
     const stftRaw = await this.sendCommand("0106").catch(() => "");
     const ltftRaw = await this.sendCommand("0107").catch(() => "");
     const speedRaw = await this.sendCommand("010D").catch(() => "");
+    const loadRaw = await this.sendCommand("0104").catch(() => "");
+    const mapRaw = await this.sendCommand("010B").catch(() => "");
+    const throttleRaw = await this.sendCommand("0111").catch(() => "");
+    const iatRaw = await this.sendCommand("010F").catch(() => "");
+    const milDistRaw = await this.sendCommand("0121").catch(() => "");
 
     return {
       rpm: parseRPM(rpmRaw) ?? "",
@@ -252,6 +291,11 @@ export class OBDBluetoothClient {
       stft: parseFuelTrim(stftRaw, "4106") ?? "",
       ltft: parseFuelTrim(ltftRaw, "4107") ?? "",
       speed: parseSpeed(speedRaw) ?? "",
+      engineLoad: parseEngineLoad(loadRaw) ?? "",
+      intakeMAP: parseIntakeMAP(mapRaw) ?? "",
+      throttlePosition: parseThrottlePosition(throttleRaw) ?? "",
+      intakeAirTemp: parseIntakeAirTemp(iatRaw) ?? "",
+      milDistance: parseMilDistance(milDistRaw) ?? "",
     };
   }
 }

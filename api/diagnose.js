@@ -37,6 +37,11 @@ export default async function handler(req, res) {
 Краткосрочная коррекция топлива STFT (%): ${freezeFrame?.stft ?? "нет данных"}
 Долгосрочная коррекция топлива LTFT (%): ${freezeFrame?.ltft ?? "нет данных"}
 Скорость (км/ч): ${freezeFrame?.speed ?? "нет данных"}
+Нагрузка двигателя (%): ${freezeFrame?.engineLoad ?? "нет данных"}
+Давление во впускном коллекторе MAP (кПа): ${freezeFrame?.intakeMAP ?? "нет данных"}
+Положение дроссельной заслонки (%): ${freezeFrame?.throttlePosition ?? "нет данных"}
+Температура впускного воздуха (°C): ${freezeFrame?.intakeAirTemp ?? "нет данных"}
+Пробег с горящим Check Engine (км): ${freezeFrame?.milDistance ?? "нет данных"}
 
 Дай диагностику строго в формате JSON, описанном в системном промпте.`;
 

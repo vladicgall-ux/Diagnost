@@ -21,6 +21,11 @@ export default function ScannerForm({ onDiagnose, loading, obdConnected, obdRef,
     stft: "",
     ltft: "",
     speed: "",
+    engineLoad: "",
+    intakeMAP: "",
+    throttlePosition: "",
+    intakeAirTemp: "",
+    milDistance: "",
   });
 
   const [obdBusy, setObdBusy] = useState(false);
@@ -267,6 +272,11 @@ export default function ScannerForm({ onDiagnose, loading, obdConnected, obdRef,
           <Field label="STFT (%)" value={freezeFrame.stft} onChange={(v) => setFreezeFrame({ ...freezeFrame, stft: v })} />
           <Field label="LTFT (%)" value={freezeFrame.ltft} onChange={(v) => setFreezeFrame({ ...freezeFrame, ltft: v })} />
           <Field label="Скорость (км/ч)" value={freezeFrame.speed} onChange={(v) => setFreezeFrame({ ...freezeFrame, speed: v })} />
+          <Field label="Нагрузка двигателя (%)" value={freezeFrame.engineLoad} onChange={(v) => setFreezeFrame({ ...freezeFrame, engineLoad: v })} />
+          <Field label="Давление в коллекторе (кПа)" value={freezeFrame.intakeMAP} onChange={(v) => setFreezeFrame({ ...freezeFrame, intakeMAP: v })} />
+          <Field label="Дроссель (%)" value={freezeFrame.throttlePosition} onChange={(v) => setFreezeFrame({ ...freezeFrame, throttlePosition: v })} />
+          <Field label="Темп. впуск. воздуха (°C)" value={freezeFrame.intakeAirTemp} onChange={(v) => setFreezeFrame({ ...freezeFrame, intakeAirTemp: v })} />
+          <Field label="Пробег с Check Engine (км)" value={freezeFrame.milDistance} onChange={(v) => setFreezeFrame({ ...freezeFrame, milDistance: v })} />
         </div>
       </div>
 
