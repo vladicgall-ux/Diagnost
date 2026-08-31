@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
-import { Wrench, Zap, Gauge, RefreshCw, AlertCircle } from "lucide-react";
+import { Wrench, Zap, Gauge, RefreshCw, AlertCircle, ScanLine, Loader2 } from "lucide-react";
 import { QUICK_PRESETS, MAKES, FUEL_TYPES, randomFreezeFrame } from "../lib/presets";
 
 const DTC_REGEX = /^[PBCUpbcu][0-9]{4}$/;
 
-export default function ScannerForm({ onDiagnose, loading, scannerFill }) {
+export default function ScannerForm({ onDiagnose, loading, obdConnected, obdRef, scannerFill }) {
   const [vehicle, setVehicle] = useState({
     make: MAKES[0],
     model: "",
@@ -21,6 +21,11 @@ export default function ScannerForm({ onDiagnose, loading, scannerFill }) {
     speed: "",
   });
 
+  const [obdBusy, setObdBusy] = useState(false);
+  const [obdError, setObdError] = useState("");
+  const [foundCodes, setFoundCodes] = useState(null);
+
+  // Manual "peek" reads from BluetoothScanner's own buttons land here.
   useEffect(() => {
     if (!scannerFill) return;
     if (scannerFill.dtc) {
@@ -37,6 +42,8 @@ export default function ScannerForm({ onDiagnose, loading, scannerFill }) {
     setDtc(preset.dtc);
     setDtcError("");
     setFreezeFrame(preset.freezeFrame);
+    setFoundCodes(null);
+    setObdError("");
   };
 
   const handleDtcChange = (val) => {
@@ -48,14 +55,47 @@ export default function ScannerForm({ onDiagnose, loading, scannerFill }) {
     }
   };
 
+  const diagnoseCode = (code, ff) => {
+    setDtc(code);
+    setDtcError("");
+    onDiagnose({ vehicle, dtc: code, freezeFrame: ff });
+  };
+
+  const runFromOBD = async () => {
+    setObdError("");
+    setFoundCodes(null);
+    setObdBusy(true);
+    try {
+      const codes = await obdRef.current.readDTCs();
+      if (codes.length === 0) {
+        setObdError("Сканер не нашёл активных ошибок в этой машине.");
+        return;
+      }
+      setFoundCodes(codes);
+      const ff = await obdRef.current.readFreezeFrame().catch(() => freezeFrame);
+      setFreezeFrame(ff);
+      diagnoseCode(codes[0], ff);
+    } catch (err) {
+      setObdError(err.message || "Не удалось считать данные с автомобиля.");
+    } finally {
+      setObdBusy(false);
+    }
+  };
+
   const handleSubmit = (e) => {
     e.preventDefault();
+    if (obdConnected && obdRef?.current) {
+      runFromOBD();
+      return;
+    }
     if (!DTC_REGEX.test(dtc)) {
       setDtcError("Введите корректный код ошибки, например P0300");
       return;
     }
     onDiagnose({ vehicle, dtc: dtc.toUpperCase(), freezeFrame });
   };
+
+  const busy = loading || obdBusy;
 
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
@@ -115,6 +155,14 @@ export default function ScannerForm({ onDiagnose, loading, scannerFill }) {
         <h2 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-blue-400">
           <Zap size={16} /> Код ошибки (DTC)
         </h2>
+
+        {obdConnected && (
+          <p className="mt-2 text-xs text-gray-400">
+            Адаптер подключён — при нажатии «Считать ошибку с авто» код придёт из машины автоматически.
+            Поле ниже можно оставить пустым.
+          </p>
+        )}
+
         <input
           value={dtc}
           onChange={(e) => handleDtcChange(e.target.value)}
@@ -169,12 +217,54 @@ export default function ScannerForm({ onDiagnose, loading, scannerFill }) {
         </div>
       </div>
 
+      {obdError && (
+        <p className="flex items-center gap-1.5 text-xs text-red-400">
+          <AlertCircle size={13} /> {obdError}
+        </p>
+      )}
+
+      {foundCodes && (
+        <div className="rounded-xl border border-white/10 bg-[#12141b] p-3.5">
+          <p className="mb-2 flex items-center gap-1.5 text-xs text-gray-400">
+            <ScanLine size={13} className="text-orange-400" />
+            Считано с автомобиля: {foundCodes.length} {foundCodes.length === 1 ? "код" : "кода"}.
+            {foundCodes.length > 1 && " Показан диагноз по первому — можно посмотреть другой:"}
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {foundCodes.map((c) => (
+              <button
+                key={c}
+                type="button"
+                onClick={() => diagnoseCode(c, freezeFrame)}
+                className={`rounded-full border px-3 py-1.5 font-mono text-xs transition ${
+                  c === dtc
+                    ? "border-orange-500/50 bg-orange-500/15 text-orange-300"
+                    : "border-blue-500/30 bg-blue-500/10 text-blue-300 hover:bg-blue-500/20"
+                }`}
+              >
+                {c}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       <button
         type="submit"
-        disabled={loading}
+        disabled={busy}
         className="w-full rounded-xl bg-gradient-to-r from-orange-500 to-orange-600 py-3.5 text-sm font-semibold uppercase tracking-wide text-white shadow-lg shadow-orange-500/20 transition hover:from-orange-400 hover:to-orange-500 disabled:cursor-not-allowed disabled:opacity-50"
       >
-        {loading ? "Диагностика..." : "Запустить диагностику"}
+        {obdBusy ? (
+          <span className="flex items-center justify-center gap-2">
+            <Loader2 size={15} className="animate-spin" /> Считываем с автомобиля...
+          </span>
+        ) : loading ? (
+          "Диагностика..."
+        ) : obdConnected ? (
+          "Считать ошибку с авто и поставить диагноз"
+        ) : (
+          "Запустить диагностику"
+        )}
       </button>
     </form>
   );

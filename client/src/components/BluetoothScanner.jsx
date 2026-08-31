@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import { Bluetooth, BluetoothConnected, Loader2, ScanLine, Gauge, Unplug } from "lucide-react";
 import { OBDBluetoothClient } from "../lib/obd";
 
-export default function BluetoothScanner({ onData }) {
+const BluetoothScanner = forwardRef(function BluetoothScanner({ onData, onStatusChange }, ref) {
   const [supported] = useState(() => OBDBluetoothClient.isSupported());
   const [status, setStatus] = useState("idle"); // idle | connecting | connected
   const [deviceName, setDeviceName] = useState("");
@@ -14,6 +14,18 @@ export default function BluetoothScanner({ onData }) {
   useEffect(() => {
     return () => clientRef.current?.disconnect();
   }, []);
+
+  useImperativeHandle(ref, () => ({
+    isConnected: () => status === "connected",
+    readDTCs: () => {
+      if (!clientRef.current) throw new Error("Адаптер не подключён.");
+      return clientRef.current.readDTCs();
+    },
+    readFreezeFrame: () => {
+      if (!clientRef.current) throw new Error("Адаптер не подключён.");
+      return clientRef.current.readFreezeFrame();
+    },
+  }));
 
   if (!supported) {
     return (
@@ -39,14 +51,17 @@ export default function BluetoothScanner({ onData }) {
         setStatus("idle");
         setDeviceName("");
         clientRef.current = null;
+        onStatusChange?.(false);
       };
       const name = await client.connect();
       clientRef.current = client;
       setDeviceName(name);
       setStatus("connected");
+      onStatusChange?.(true);
     } catch (err) {
       setError(err.message || "Не удалось подключиться к адаптеру.");
       setStatus("idle");
+      onStatusChange?.(false);
     }
   };
 
@@ -56,6 +71,7 @@ export default function BluetoothScanner({ onData }) {
     setStatus("idle");
     setDeviceName("");
     setFoundCodes(null);
+    onStatusChange?.(false);
   };
 
   const handleReadDTCs = async () => {
@@ -129,33 +145,39 @@ export default function BluetoothScanner({ onData }) {
           )}
         </button>
       ) : (
-        <div className="mt-3 grid grid-cols-2 gap-2">
-          <button
-            type="button"
-            onClick={handleReadDTCs}
-            disabled={busy !== ""}
-            className="flex items-center justify-center gap-1.5 rounded-lg border border-blue-500/30 bg-blue-500/10 py-2.5 text-xs text-blue-300 transition hover:bg-blue-500/20 disabled:opacity-60"
-          >
-            {busy === "dtc" ? <Loader2 size={14} className="animate-spin" /> : <ScanLine size={14} />}
-            Считать ошибки
-          </button>
-          <button
-            type="button"
-            onClick={handleReadFreezeFrame}
-            disabled={busy !== ""}
-            className="flex items-center justify-center gap-1.5 rounded-lg border border-green-500/30 bg-green-500/10 py-2.5 text-xs text-green-300 transition hover:bg-green-500/20 disabled:opacity-60"
-          >
-            {busy === "ff" ? <Loader2 size={14} className="animate-spin" /> : <Gauge size={14} />}
-            Считать датчики
-          </button>
-          <button
-            type="button"
-            onClick={handleDisconnect}
-            className="col-span-2 flex items-center justify-center gap-1.5 rounded-lg border border-white/10 bg-white/5 py-2 text-xs text-gray-400 transition hover:bg-white/10"
-          >
-            <Unplug size={13} /> Отключить
-          </button>
-        </div>
+        <>
+          <p className="mt-3 text-xs text-gray-400">
+            Адаптер подключён — нажмите «Считать ошибку с авто» в блоке ниже, чтобы получить коды прямо
+            из машины. Или считайте отдельно здесь:
+          </p>
+          <div className="mt-2 grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={handleReadDTCs}
+              disabled={busy !== ""}
+              className="flex items-center justify-center gap-1.5 rounded-lg border border-blue-500/30 bg-blue-500/10 py-2.5 text-xs text-blue-300 transition hover:bg-blue-500/20 disabled:opacity-60"
+            >
+              {busy === "dtc" ? <Loader2 size={14} className="animate-spin" /> : <ScanLine size={14} />}
+              Считать ошибки
+            </button>
+            <button
+              type="button"
+              onClick={handleReadFreezeFrame}
+              disabled={busy !== ""}
+              className="flex items-center justify-center gap-1.5 rounded-lg border border-green-500/30 bg-green-500/10 py-2.5 text-xs text-green-300 transition hover:bg-green-500/20 disabled:opacity-60"
+            >
+              {busy === "ff" ? <Loader2 size={14} className="animate-spin" /> : <Gauge size={14} />}
+              Считать датчики
+            </button>
+            <button
+              type="button"
+              onClick={handleDisconnect}
+              className="col-span-2 flex items-center justify-center gap-1.5 rounded-lg border border-white/10 bg-white/5 py-2 text-xs text-gray-400 transition hover:bg-white/10"
+            >
+              <Unplug size={13} /> Отключить
+            </button>
+          </div>
+        </>
       )}
 
       {foundCodes && (
@@ -182,4 +204,6 @@ export default function BluetoothScanner({ onData }) {
       {error && <p className="mt-3 text-xs text-red-400">{error}</p>}
     </div>
   );
-}
+});
+
+export default BluetoothScanner;
