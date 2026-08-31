@@ -83,6 +83,24 @@ function parseSpeed(raw) {
   return parseInt(bytes.slice(0, 2), 16);
 }
 
+function parseVIN(raw) {
+  const clean = raw.replace(/[^0-9A-Fa-f]/g, "").toUpperCase();
+  const idx = clean.indexOf("4902");
+  if (idx === -1) return null;
+  let body = clean.slice(idx + 4);
+  // Mode 09 responses lead with a "number of data items" byte before the VIN bytes.
+  if (body.length % 2 === 1) body = body.slice(0, -1);
+  if (body.length >= 2) body = body.slice(2);
+
+  let vin = "";
+  for (let i = 0; i + 2 <= body.length; i += 2) {
+    const code = parseInt(body.slice(i, i + 2), 16);
+    if (code >= 32 && code <= 126) vin += String.fromCharCode(code);
+  }
+  vin = vin.slice(-17); // keep the last 17 printable chars in case of leading noise
+  return vin.length === 17 ? vin : null;
+}
+
 export class OBDBluetoothClient {
   constructor() {
     this.device = null;
@@ -199,6 +217,11 @@ export class OBDBluetoothClient {
   async readDTCs() {
     const raw = await this.sendCommand("03");
     return parseDTCResponse(raw);
+  }
+
+  async readVIN() {
+    const raw = await this.sendCommand("0902", 6000);
+    return parseVIN(raw);
   }
 
   async readFreezeFrame() {

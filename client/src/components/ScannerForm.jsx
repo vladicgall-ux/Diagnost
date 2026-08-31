@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
-import { Wrench, Zap, Gauge, RefreshCw, AlertCircle, ScanLine, Loader2 } from "lucide-react";
-import { QUICK_PRESETS, MAKES, FUEL_TYPES, randomFreezeFrame } from "../lib/presets";
+import { Wrench, Zap, Gauge, AlertCircle, ScanLine, Loader2 } from "lucide-react";
+import { QUICK_PRESETS, FUEL_TYPES } from "../lib/presets";
 
 const DTC_REGEX = /^[PBCUpbcu][0-9]{4}$/;
 
 export default function ScannerForm({ onDiagnose, loading, obdConnected, obdRef, scannerFill }) {
   const [vehicle, setVehicle] = useState({
-    make: MAKES[0],
+    make: "",
     model: "",
     year: new Date().getFullYear() - 5,
     fuelType: FUEL_TYPES[0],
@@ -34,6 +34,9 @@ export default function ScannerForm({ onDiagnose, loading, obdConnected, obdRef,
     }
     if (scannerFill.freezeFrame) {
       setFreezeFrame(scannerFill.freezeFrame);
+    }
+    if (scannerFill.vehicle) {
+      setVehicle((v) => ({ ...v, ...scannerFill.vehicle }));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scannerFill]);
@@ -106,15 +109,12 @@ export default function ScannerForm({ onDiagnose, loading, obdConnected, obdRef,
         <div className="mt-4 grid grid-cols-2 gap-3">
           <div>
             <label className="mb-1 block text-xs text-gray-400">Марка</label>
-            <select
+            <input
               value={vehicle.make}
               onChange={(e) => setVehicle({ ...vehicle, make: e.target.value })}
+              placeholder="Toyota, Lada..."
               className="w-full rounded-lg border border-white/10 bg-[#0b0d12] px-3 py-2 text-sm text-gray-100 outline-none focus:border-orange-500"
-            >
-              {MAKES.map((m) => (
-                <option key={m}>{m}</option>
-              ))}
-            </select>
+            />
           </div>
           <div>
             <label className="mb-1 block text-xs text-gray-400">Модель</label>
@@ -196,18 +196,9 @@ export default function ScannerForm({ onDiagnose, loading, obdConnected, obdRef,
       </div>
 
       <div className="rounded-2xl border border-white/10 bg-[#12141b] p-4 sm:p-5">
-        <div className="flex items-center justify-between">
-          <h2 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-green-400">
-            <Gauge size={16} /> Стоп-кадр (Freeze Frame)
-          </h2>
-          <button
-            type="button"
-            onClick={() => setFreezeFrame(randomFreezeFrame())}
-            className="flex items-center gap-1 rounded-lg border border-green-500/30 bg-green-500/10 px-2.5 py-1.5 text-xs text-green-300 transition hover:bg-green-500/20"
-          >
-            <RefreshCw size={12} /> Сгенерировать данные
-          </button>
-        </div>
+        <h2 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-green-400">
+          <Gauge size={16} /> Стоп-кадр (Freeze Frame)
+        </h2>
         <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
           <Field label="Обороты (RPM)" value={freezeFrame.rpm} onChange={(v) => setFreezeFrame({ ...freezeFrame, rpm: v })} />
           <Field label="Темп. ОЖ (°C)" value={freezeFrame.coolantTemp} onChange={(v) => setFreezeFrame({ ...freezeFrame, coolantTemp: v })} />

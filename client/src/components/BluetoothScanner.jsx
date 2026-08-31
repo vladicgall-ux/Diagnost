@@ -1,6 +1,7 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
-import { Bluetooth, BluetoothConnected, Loader2, ScanLine, Gauge, Unplug } from "lucide-react";
+import { Bluetooth, BluetoothConnected, Loader2, ScanLine, Gauge, Unplug, IdCard } from "lucide-react";
 import { OBDBluetoothClient } from "../lib/obd";
+import { decodeVIN } from "../lib/vinDecode";
 
 const BluetoothScanner = forwardRef(function BluetoothScanner({ onData, onStatusChange }, ref) {
   const [supported] = useState(() => OBDBluetoothClient.isSupported());
@@ -9,6 +10,7 @@ const BluetoothScanner = forwardRef(function BluetoothScanner({ onData, onStatus
   const [busy, setBusy] = useState(""); // "" | "dtc" | "ff"
   const [error, setError] = useState("");
   const [foundCodes, setFoundCodes] = useState(null);
+  const [vinStatus, setVinStatus] = useState(""); // "" | "reading" | "done" | "failed"
   const clientRef = useRef(null);
 
   useEffect(() => {
@@ -50,6 +52,7 @@ const BluetoothScanner = forwardRef(function BluetoothScanner({ onData, onStatus
       client.onDisconnected = () => {
         setStatus("idle");
         setDeviceName("");
+        setVinStatus("");
         clientRef.current = null;
         onStatusChange?.(false);
       };
@@ -58,10 +61,27 @@ const BluetoothScanner = forwardRef(function BluetoothScanner({ onData, onStatus
       setDeviceName(name);
       setStatus("connected");
       onStatusChange?.(true);
+      detectVehicle(client);
     } catch (err) {
       setError(err.message || "Не удалось подключиться к адаптеру.");
       setStatus("idle");
       onStatusChange?.(false);
+    }
+  };
+
+  const detectVehicle = async (client) => {
+    setVinStatus("reading");
+    try {
+      const vin = await client.readVIN();
+      if (!vin) {
+        setVinStatus("failed");
+        return;
+      }
+      const vehicle = await decodeVIN(vin);
+      onData({ vehicle });
+      setVinStatus("done");
+    } catch {
+      setVinStatus("failed");
     }
   };
 
@@ -71,6 +91,7 @@ const BluetoothScanner = forwardRef(function BluetoothScanner({ onData, onStatus
     setStatus("idle");
     setDeviceName("");
     setFoundCodes(null);
+    setVinStatus("");
     onStatusChange?.(false);
   };
 
@@ -150,6 +171,23 @@ const BluetoothScanner = forwardRef(function BluetoothScanner({ onData, onStatus
             Адаптер подключён — нажмите «Считать ошибку с авто» в блоке ниже, чтобы получить коды прямо
             из машины. Или считайте отдельно здесь:
           </p>
+
+          {vinStatus === "reading" && (
+            <p className="mt-2 flex items-center gap-1.5 text-xs text-gray-500">
+              <Loader2 size={12} className="animate-spin" /> Определяем марку и модель по VIN...
+            </p>
+          )}
+          {vinStatus === "done" && (
+            <p className="mt-2 flex items-center gap-1.5 text-xs text-green-500">
+              <IdCard size={12} /> Марка, модель и год определены по VIN и подставлены выше.
+            </p>
+          )}
+          {vinStatus === "failed" && (
+            <p className="mt-2 flex items-center gap-1.5 text-xs text-gray-500">
+              <IdCard size={12} /> Не удалось определить авто по VIN — впишите марку и модель вручную.
+            </p>
+          )}
+
           <div className="mt-2 grid grid-cols-2 gap-2">
             <button
               type="button"

@@ -16,21 +16,6 @@ export const QUICK_PRESETS = [
   },
 ];
 
-export const MAKES = [
-  "Toyota", "Volkswagen", "Kia", "Hyundai", "BMW", "Mercedes-Benz",
-  "Lada", "Ford", "Chevrolet", "Nissan", "Audi", "Skoda", "Renault",
-];
-
 export const FUEL_TYPES = [
   "Бензин", "Дизель", "Гибрид", "Газ (ГБО)", "Электро",
 ];
-
-export function randomFreezeFrame() {
-  return {
-    rpm: Math.floor(600 + Math.random() * 3000),
-    coolantTemp: Math.floor(70 + Math.random() * 40),
-    stft: +(Math.random() * 20 - 10).toFixed(1),
-    ltft: +(Math.random() * 24 - 12).toFixed(1),
-    speed: Math.floor(Math.random() * 140),
-  };
-}
