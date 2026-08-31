@@ -224,6 +224,19 @@ export class OBDBluetoothClient {
     return parseVIN(raw);
   }
 
+  // Mode 04: clears stored DTCs, turns off the Check Engine light, and
+  // resets the car's readiness monitors. The car itself decides whether
+  // to accept this (some refuse while the engine is running).
+  async clearDTCs() {
+    const raw = await this.sendCommand("04");
+    const clean = raw.replace(/[^0-9A-Za-z]/g, "").toUpperCase();
+    if (clean.includes("44")) return true;
+    if (clean.includes("NODATA") || clean.includes("UNABLETOCONNECT")) {
+      throw new Error("Машина отказалась сбросить ошибки. Попробуйте при заглушённом двигателе.");
+    }
+    return true;
+  }
+
   async readFreezeFrame() {
     // ELM327 talks to the car one command at a time over a serial-like
     // link, so these must run sequentially, never in parallel.

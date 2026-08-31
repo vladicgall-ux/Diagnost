@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Wrench, Zap, Gauge, AlertCircle, ScanLine, Loader2 } from "lucide-react";
-import { QUICK_PRESETS, FUEL_TYPES } from "../lib/presets";
+import { FUEL_TYPES } from "../lib/presets";
 import { CAR_CATALOG, MAKES } from "../lib/carCatalog";
 
 const DTC_REGEX = /^[PBCUpbcu][0-9]{4}$/;
@@ -80,14 +80,6 @@ export default function ScannerForm({ onDiagnose, loading, obdConnected, obdRef,
       setModelCustom(false);
       setVehicle((v) => ({ ...v, model: value }));
     }
-  };
-
-  const applyPreset = (preset) => {
-    setDtc(preset.dtc);
-    setDtcError("");
-    setFreezeFrame(preset.freezeFrame);
-    setFoundCodes(null);
-    setObdError("");
   };
 
   const handleDtcChange = (val) => {
@@ -263,22 +255,6 @@ export default function ScannerForm({ onDiagnose, loading, obdConnected, obdRef,
             <AlertCircle size={13} /> {dtcError}
           </p>
         )}
-
-        <div className="mt-4">
-          <p className="mb-2 text-xs text-gray-400">Быстрый тест</p>
-          <div className="flex flex-wrap gap-2">
-            {QUICK_PRESETS.map((p) => (
-              <button
-                key={p.dtc}
-                type="button"
-                onClick={() => applyPreset(p)}
-                className="rounded-full border border-blue-500/30 bg-blue-500/10 px-3 py-1.5 text-xs text-blue-300 transition hover:bg-blue-500/20"
-              >
-                {p.label}
-              </button>
-            ))}
-          </div>
-        </div>
       </div>
 
       <div className="rounded-2xl border border-white/10 bg-[#12141b] p-4 sm:p-5">

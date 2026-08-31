@@ -1,5 +1,5 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
-import { Bluetooth, BluetoothConnected, Loader2, ScanLine, Gauge, Unplug, IdCard } from "lucide-react";
+import { Bluetooth, BluetoothConnected, Loader2, ScanLine, Gauge, Unplug, IdCard, Eraser, CheckCircle2 } from "lucide-react";
 import { OBDBluetoothClient } from "../lib/obd";
 import { decodeVIN } from "../lib/vinDecode";
 
@@ -7,10 +7,11 @@ const BluetoothScanner = forwardRef(function BluetoothScanner({ onData, onStatus
   const [supported] = useState(() => OBDBluetoothClient.isSupported());
   const [status, setStatus] = useState("idle"); // idle | connecting | connected
   const [deviceName, setDeviceName] = useState("");
-  const [busy, setBusy] = useState(""); // "" | "dtc" | "ff"
+  const [busy, setBusy] = useState(""); // "" | "dtc" | "ff" | "clear"
   const [error, setError] = useState("");
   const [foundCodes, setFoundCodes] = useState(null);
   const [vinStatus, setVinStatus] = useState(""); // "" | "reading" | "done" | "failed"
+  const [clearedAt, setClearedAt] = useState(0);
   const clientRef = useRef(null);
 
   useEffect(() => {
@@ -130,6 +131,26 @@ const BluetoothScanner = forwardRef(function BluetoothScanner({ onData, onStatus
     }
   };
 
+  const handleClearDTCs = async () => {
+    if (!clientRef.current) return;
+    const confirmed = window.confirm(
+      "Сбросить ошибки на автомобиле? Лампа Check Engine погаснет, но если неисправность не устранена, " +
+        "код появится снова после нескольких поездок. Это также сбросит счётчики готовности систем."
+    );
+    if (!confirmed) return;
+    setBusy("clear");
+    setError("");
+    setFoundCodes(null);
+    try {
+      await clientRef.current.clearDTCs();
+      setClearedAt(Date.now());
+    } catch (err) {
+      setError(err.message || "Не удалось сбросить ошибки.");
+    } finally {
+      setBusy("");
+    }
+  };
+
   return (
     <div className="rounded-2xl border border-white/10 bg-[#12141b] p-4 sm:p-5">
       <div className="flex items-center justify-between gap-3">
@@ -209,12 +230,27 @@ const BluetoothScanner = forwardRef(function BluetoothScanner({ onData, onStatus
             </button>
             <button
               type="button"
+              onClick={handleClearDTCs}
+              disabled={busy !== ""}
+              className="col-span-2 flex items-center justify-center gap-1.5 rounded-lg border border-red-500/30 bg-red-500/10 py-2.5 text-xs text-red-300 transition hover:bg-red-500/20 disabled:opacity-60"
+            >
+              {busy === "clear" ? <Loader2 size={14} className="animate-spin" /> : <Eraser size={14} />}
+              Сбросить ошибки (погасить Check Engine)
+            </button>
+            <button
+              type="button"
               onClick={handleDisconnect}
               className="col-span-2 flex items-center justify-center gap-1.5 rounded-lg border border-white/10 bg-white/5 py-2 text-xs text-gray-400 transition hover:bg-white/10"
             >
               <Unplug size={13} /> Отключить
             </button>
           </div>
+
+          {clearedAt > 0 && (
+            <p className="mt-2 flex items-center gap-1.5 text-xs text-green-500">
+              <CheckCircle2 size={12} /> Ошибки сброшены, лампа Check Engine должна погаснуть.
+            </p>
+          )}
         </>
       )}
 
