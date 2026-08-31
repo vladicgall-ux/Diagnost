@@ -1,10 +1,10 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Wrench, Zap, Gauge, RefreshCw, AlertCircle } from "lucide-react";
 import { QUICK_PRESETS, MAKES, FUEL_TYPES, randomFreezeFrame } from "../lib/presets";
 
 const DTC_REGEX = /^[PBCUpbcu][0-9]{4}$/;
 
-export default function ScannerForm({ onDiagnose, loading }) {
+export default function ScannerForm({ onDiagnose, loading, scannerFill }) {
   const [vehicle, setVehicle] = useState({
     make: MAKES[0],
     model: "",
@@ -20,6 +20,18 @@ export default function ScannerForm({ onDiagnose, loading }) {
     ltft: "",
     speed: "",
   });
+
+  useEffect(() => {
+    if (!scannerFill) return;
+    if (scannerFill.dtc) {
+      setDtc(scannerFill.dtc);
+      setDtcError("");
+    }
+    if (scannerFill.freezeFrame) {
+      setFreezeFrame(scannerFill.freezeFrame);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scannerFill]);
 
   const applyPreset = (preset) => {
     setDtc(preset.dtc);

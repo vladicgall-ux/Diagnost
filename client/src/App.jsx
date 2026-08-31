@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Gauge, AlertOctagon } from "lucide-react";
+import BluetoothScanner from "./components/BluetoothScanner";
 import ScannerForm from "./components/ScannerForm";
 import DiagnosticSkeleton from "./components/DiagnosticSkeleton";
 import DiagnosticReport from "./components/DiagnosticReport";
@@ -10,6 +11,7 @@ export default function App() {
   const [report, setReport] = useState(null);
   const [context, setContext] = useState(null);
   const [error, setError] = useState("");
+  const [scannerFill, setScannerFill] = useState(null);
 
   const handleDiagnose = async (payload) => {
     setLoading(true);
@@ -39,7 +41,8 @@ export default function App() {
       </header>
 
       <main className="mx-auto max-w-2xl space-y-5 px-4 py-5">
-        <ScannerForm onDiagnose={handleDiagnose} loading={loading} />
+        <BluetoothScanner onData={setScannerFill} />
+        <ScannerForm onDiagnose={handleDiagnose} loading={loading} scannerFill={scannerFill} />
 
         {error && (
           <div className="flex items-center gap-2 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
