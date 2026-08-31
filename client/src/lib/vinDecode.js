@@ -1,3 +1,5 @@
+import { matchMake, matchModel } from "./carCatalog";
+
 // Decodes a VIN into make/model/year using NHTSA's free public vPIC API.
 // No key required, CORS-enabled. Coverage is strongest for vehicles sold
 // in the US market — some region-only models may come back incomplete.
@@ -11,21 +13,17 @@ export async function decodeVIN(vin) {
   const results = data?.Results || [];
   const get = (name) => results.find((r) => r.Variable === name)?.Value || "";
 
-  const make = get("Make");
-  const model = get("Model");
+  const rawMake = get("Make");
+  const rawModel = get("Model");
   const year = get("Model Year");
 
-  if (!make) {
+  if (!rawMake) {
     throw new Error("Не удалось распознать VIN этого автомобиля");
   }
 
-  const vehicle = {};
-  if (make) vehicle.make = titleCase(make);
-  if (model) vehicle.model = model;
+  const make = matchMake(rawMake);
+  const vehicle = { make };
+  if (rawModel) vehicle.model = matchModel(make, rawModel);
   if (year) vehicle.year = year;
   return vehicle;
-}
-
-function titleCase(s) {
-  return s.replace(/\w\S*/g, (w) => w[0].toUpperCase() + w.slice(1).toLowerCase());
 }

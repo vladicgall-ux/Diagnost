@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
 import { Wrench, Zap, Gauge, AlertCircle, ScanLine, Loader2 } from "lucide-react";
 import { QUICK_PRESETS, FUEL_TYPES } from "../lib/presets";
+import { CAR_CATALOG, MAKES } from "../lib/carCatalog";
 
 const DTC_REGEX = /^[PBCUpbcu][0-9]{4}$/;
+const OTHER = "__other__";
 
 export default function ScannerForm({ onDiagnose, loading, obdConnected, obdRef, scannerFill }) {
   const [vehicle, setVehicle] = useState({
@@ -25,6 +27,9 @@ export default function ScannerForm({ onDiagnose, loading, obdConnected, obdRef,
   const [obdError, setObdError] = useState("");
   const [foundCodes, setFoundCodes] = useState(null);
 
+  const [makeCustom, setMakeCustom] = useState(false);
+  const [modelCustom, setModelCustom] = useState(false);
+
   // Manual "peek" reads from BluetoothScanner's own buttons land here.
   useEffect(() => {
     if (!scannerFill) return;
@@ -40,6 +45,42 @@ export default function ScannerForm({ onDiagnose, loading, obdConnected, obdRef,
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [scannerFill]);
+
+  // Keep the make/model dropdowns in sync when the vehicle is filled
+  // from outside (VIN auto-detect) rather than typed by hand.
+  useEffect(() => {
+    if (vehicle.make && CAR_CATALOG[vehicle.make]) setMakeCustom(false);
+    else if (vehicle.make) setMakeCustom(true);
+  }, [vehicle.make]);
+
+  useEffect(() => {
+    if (makeCustom) return;
+    const options = CAR_CATALOG[vehicle.make] || [];
+    if (vehicle.model && options.includes(vehicle.model)) setModelCustom(false);
+    else if (vehicle.model) setModelCustom(true);
+  }, [vehicle.model, vehicle.make, makeCustom]);
+
+  const handleMakeSelect = (value) => {
+    if (value === OTHER) {
+      setMakeCustom(true);
+      setVehicle((v) => ({ ...v, make: CAR_CATALOG[v.make] ? "" : v.make, model: "" }));
+      setModelCustom(false);
+    } else {
+      setMakeCustom(false);
+      setVehicle((v) => ({ ...v, make: value, model: "" }));
+      setModelCustom(false);
+    }
+  };
+
+  const handleModelSelect = (value) => {
+    if (value === OTHER) {
+      setModelCustom(true);
+      setVehicle((v) => ({ ...v, model: "" }));
+    } else {
+      setModelCustom(false);
+      setVehicle((v) => ({ ...v, model: value }));
+    }
+  };
 
   const applyPreset = (preset) => {
     setDtc(preset.dtc);
@@ -109,21 +150,66 @@ export default function ScannerForm({ onDiagnose, loading, obdConnected, obdRef,
         <div className="mt-4 grid grid-cols-2 gap-3">
           <div>
             <label className="mb-1 block text-xs text-gray-400">Марка</label>
-            <input
-              value={vehicle.make}
-              onChange={(e) => setVehicle({ ...vehicle, make: e.target.value })}
-              placeholder="Toyota, Lada..."
+            <select
+              value={makeCustom ? OTHER : vehicle.make || ""}
+              onChange={(e) => handleMakeSelect(e.target.value)}
               className="w-full rounded-lg border border-white/10 bg-[#0b0d12] px-3 py-2 text-sm text-gray-100 outline-none focus:border-orange-500"
-            />
+            >
+              <option value="" disabled>
+                Выберите марку
+              </option>
+              {MAKES.map((m) => (
+                <option key={m} value={m}>
+                  {m}
+                </option>
+              ))}
+              <option value={OTHER}>Другая марка…</option>
+            </select>
+            {makeCustom && (
+              <input
+                value={vehicle.make}
+                onChange={(e) => setVehicle({ ...vehicle, make: e.target.value })}
+                placeholder="Впишите марку"
+                autoFocus
+                className="mt-2 w-full rounded-lg border border-white/10 bg-[#0b0d12] px-3 py-2 text-sm text-gray-100 outline-none focus:border-orange-500"
+              />
+            )}
           </div>
           <div>
             <label className="mb-1 block text-xs text-gray-400">Модель</label>
-            <input
-              value={vehicle.model}
-              onChange={(e) => setVehicle({ ...vehicle, model: e.target.value })}
-              placeholder="Camry, Golf..."
-              className="w-full rounded-lg border border-white/10 bg-[#0b0d12] px-3 py-2 text-sm text-gray-100 outline-none focus:border-orange-500"
-            />
+            {!makeCustom && CAR_CATALOG[vehicle.make] ? (
+              <select
+                value={modelCustom ? OTHER : vehicle.model || ""}
+                onChange={(e) => handleModelSelect(e.target.value)}
+                className="w-full rounded-lg border border-white/10 bg-[#0b0d12] px-3 py-2 text-sm text-gray-100 outline-none focus:border-orange-500"
+              >
+                <option value="" disabled>
+                  Выберите модель
+                </option>
+                {CAR_CATALOG[vehicle.make].map((m) => (
+                  <option key={m} value={m}>
+                    {m}
+                  </option>
+                ))}
+                <option value={OTHER}>Другая модель…</option>
+              </select>
+            ) : (
+              <input
+                value={vehicle.model}
+                onChange={(e) => setVehicle({ ...vehicle, model: e.target.value })}
+                placeholder="Впишите модель"
+                className="w-full rounded-lg border border-white/10 bg-[#0b0d12] px-3 py-2 text-sm text-gray-100 outline-none focus:border-orange-500"
+              />
+            )}
+            {!makeCustom && CAR_CATALOG[vehicle.make] && modelCustom && (
+              <input
+                value={vehicle.model}
+                onChange={(e) => setVehicle({ ...vehicle, model: e.target.value })}
+                placeholder="Впишите модель"
+                autoFocus
+                className="mt-2 w-full rounded-lg border border-white/10 bg-[#0b0d12] px-3 py-2 text-sm text-gray-100 outline-none focus:border-orange-500"
+              />
+            )}
           </div>
           <div>
             <label className="mb-1 block text-xs text-gray-400">Год выпуска</label>
