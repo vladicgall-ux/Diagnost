@@ -1,5 +1,5 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
-import { Bluetooth, BluetoothConnected, Loader2, ScanLine, Gauge, Unplug, IdCard, Eraser, CheckCircle2 } from "lucide-react";
+import { Bluetooth, BluetoothConnected, Loader2, ScanLine, Gauge, Unplug, IdCard, Eraser, CheckCircle2, Route } from "lucide-react";
 import { OBDBluetoothClient } from "../lib/obd";
 import { decodeVIN } from "../lib/vinDecode";
 
@@ -11,6 +11,7 @@ const BluetoothScanner = forwardRef(function BluetoothScanner({ onData, onStatus
   const [error, setError] = useState("");
   const [foundCodes, setFoundCodes] = useState(null);
   const [vinStatus, setVinStatus] = useState(""); // "" | "reading" | "done" | "failed"
+  const [odometer, setOdometer] = useState(null); // number | "unsupported" | null
   const [clearedAt, setClearedAt] = useState(0);
   const clientRef = useRef(null);
 
@@ -54,6 +55,7 @@ const BluetoothScanner = forwardRef(function BluetoothScanner({ onData, onStatus
         setStatus("idle");
         setDeviceName("");
         setVinStatus("");
+        setOdometer(null);
         clientRef.current = null;
         onStatusChange?.(false);
       };
@@ -76,13 +78,25 @@ const BluetoothScanner = forwardRef(function BluetoothScanner({ onData, onStatus
       const vin = await client.readVIN();
       if (!vin) {
         setVinStatus("failed");
-        return;
+      } else {
+        const vehicle = await decodeVIN(vin);
+        onData({ vehicle });
+        setVinStatus("done");
       }
-      const vehicle = await decodeVIN(vin);
-      onData({ vehicle });
-      setVinStatus("done");
     } catch {
       setVinStatus("failed");
+    }
+
+    try {
+      const km = await client.readOdometer();
+      if (km === null) {
+        setOdometer("unsupported");
+      } else {
+        setOdometer(km);
+        onData({ vehicle: { mileage: km } });
+      }
+    } catch {
+      setOdometer("unsupported");
     }
   };
 
@@ -93,6 +107,7 @@ const BluetoothScanner = forwardRef(function BluetoothScanner({ onData, onStatus
     setDeviceName("");
     setFoundCodes(null);
     setVinStatus("");
+    setOdometer(null);
     onStatusChange?.(false);
   };
 
@@ -206,6 +221,23 @@ const BluetoothScanner = forwardRef(function BluetoothScanner({ onData, onStatus
           {vinStatus === "failed" && (
             <p className="mt-2 flex items-center gap-1.5 text-xs text-gray-500">
               <IdCard size={12} /> Не удалось определить авто по VIN — впишите марку и модель вручную.
+            </p>
+          )}
+
+          {typeof odometer === "number" && (
+            <p className="mt-2 flex items-start gap-1.5 text-xs text-gray-400">
+              <Route size={12} className="mt-0.5 shrink-0" />
+              <span>
+                Пробег по данным авто: <b className="text-gray-200">{odometer.toLocaleString("ru-RU")} км</b>.
+                Это значение из блока управления машины — совпадает с приборной панелью. Если пробег
+                скручен, тут будет та же скрученная цифра: OBD не может это обнаружить.
+              </span>
+            </p>
+          )}
+          {odometer === "unsupported" && (
+            <p className="mt-2 flex items-center gap-1.5 text-xs text-gray-500">
+              <Route size={12} /> Эта машина не отдаёт пробег через стандартный OBD-PID (частый случай для
+              старых или не-американских/не-евро моделей).
             </p>
           )}
 

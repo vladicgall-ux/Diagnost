@@ -117,6 +117,19 @@ function parseMilDistance(raw) {
   return a * 256 + b; // km
 }
 
+function parseOdometer(raw) {
+  // PID 0xA6 "Odometer" — added to OBD-II in SAE J1979-2 (mandatory on many
+  // markets only from ~2019+). Older or non-compliant vehicles won't answer.
+  const bytes = extractBytes(raw, "41A6");
+  if (!bytes || bytes.length < 8) return null;
+  const a = parseInt(bytes.slice(0, 2), 16);
+  const b = parseInt(bytes.slice(2, 4), 16);
+  const c = parseInt(bytes.slice(4, 6), 16);
+  const d = parseInt(bytes.slice(6, 8), 16);
+  const raw32 = a * 16777216 + b * 65536 + c * 256 + d;
+  return +(raw32 * 0.1).toFixed(1); // km
+}
+
 function parseVIN(raw) {
   const clean = raw.replace(/[^0-9A-Fa-f]/g, "").toUpperCase();
   const idx = clean.indexOf("4902");
@@ -256,6 +269,16 @@ export class OBDBluetoothClient {
   async readVIN() {
     const raw = await this.sendCommand("0902", 6000);
     return parseVIN(raw);
+  }
+
+  // Reads the mileage as currently stored in the vehicle's own control
+  // unit — the same number the instrument cluster shows. This is NOT a
+  // way to detect or bypass odometer tampering: a rolled-back odometer
+  // reports the rolled-back value here too. Not every vehicle supports
+  // this PID (added to the standard only for newer/certain-market cars).
+  async readOdometer() {
+    const raw = await this.sendCommand("01A6");
+    return parseOdometer(raw);
   }
 
   // Mode 04: clears stored DTCs, turns off the Check Engine light, and

@@ -28,6 +28,7 @@ export default async function handler(req, res) {
 Модель: ${vehicle?.model || "не указана"}
 Год выпуска: ${vehicle?.year || "не указан"}
 Тип двигателя/топливо: ${vehicle?.fuelType || "не указан"}
+Пробег: ${vehicle?.mileage ? `${vehicle.mileage} км` : "не указан"}
 
 Код ошибки (DTC): ${String(dtc).trim().toUpperCase()}
 

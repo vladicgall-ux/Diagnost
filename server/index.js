@@ -36,6 +36,7 @@ app.post("/api/diagnose", async (req, res) => {
 Модель: ${vehicle?.model || "не указана"}
 Год выпуска: ${vehicle?.year || "не указан"}
 Тип двигателя/топливо: ${vehicle?.fuelType || "не указан"}
+Пробег: ${vehicle?.mileage ? `${vehicle.mileage} км` : "не указан"}
 
 Код ошибки (DTC): ${dtc.trim().toUpperCase()}
 

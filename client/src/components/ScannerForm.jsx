@@ -12,6 +12,7 @@ export default function ScannerForm({ onDiagnose, loading, obdConnected, obdRef,
     model: "",
     year: new Date().getFullYear() - 5,
     fuelType: FUEL_TYPES[0],
+    mileage: null,
   });
   const [dtc, setDtc] = useState("");
   const [dtcError, setDtcError] = useState("");
@@ -230,6 +231,16 @@ export default function ScannerForm({ onDiagnose, loading, obdConnected, obdRef,
                 <option key={f}>{f}</option>
               ))}
             </select>
+          </div>
+          <div>
+            <label className="mb-1 block text-xs text-gray-400">Пробег, км</label>
+            <input
+              type="number"
+              value={vehicle.mileage ?? ""}
+              onChange={(e) => setVehicle({ ...vehicle, mileage: e.target.value })}
+              placeholder="Считается с OBD"
+              className="w-full rounded-lg border border-white/10 bg-[#0b0d12] px-3 py-2 text-sm text-gray-100 outline-none focus:border-orange-500"
+            />
           </div>
         </div>
       </div>
