@@ -3,10 +3,17 @@ import { CHAT_SYSTEM_PROMPT } from "../server/prompts.js";
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 const MODEL = "openai/gpt-oss-120b";
+const APP_PASSWORD = process.env.APP_PASSWORD || "1234567890";
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     res.status(405).json({ error: "Method not allowed" });
+    return;
+  }
+
+  const providedPassword = req.headers["x-app-password"];
+  if (providedPassword !== APP_PASSWORD) {
+    res.status(401).json({ error: "Неверный пароль доступа" });
     return;
   }
 

@@ -1,7 +1,9 @@
+const APP_PASSWORD = "1234567890";
+
 export async function runDiagnose({ vehicle, dtc, freezeFrame }) {
   const res = await fetch("/api/diagnose", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", "X-App-Password": APP_PASSWORD },
     body: JSON.stringify({ vehicle, dtc, freezeFrame }),
   });
   const data = await res.json();
@@ -12,7 +14,7 @@ export async function runDiagnose({ vehicle, dtc, freezeFrame }) {
 export async function sendChatMessage({ messages, context }) {
   const res = await fetch("/api/chat", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", "X-App-Password": APP_PASSWORD },
     body: JSON.stringify({ messages, context }),
   });
   const data = await res.json();
