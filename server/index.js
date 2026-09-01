@@ -1,5 +1,6 @@
 import express from "express";
 import cors from "cors";
+import crypto from "crypto";
 import dotenv from "dotenv";
 import Groq from "groq-sdk";
 import { DIAGNOSE_SYSTEM_PROMPT, CHAT_SYSTEM_PROMPT } from "./prompts.js";
@@ -8,7 +9,13 @@ dotenv.config({ path: "../.env" });
 dotenv.config();
 
 const app = express();
-app.use(cors());
+
+const allowedOrigin = process.env.ALLOWED_ORIGIN || null;
+app.use(
+  cors({
+    origin: allowedOrigin ? allowedOrigin.split(",").map((s) => s.trim()) : false,
+  })
+);
 app.use(express.json());
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
@@ -16,11 +23,56 @@ const MODEL = "openai/gpt-oss-120b";
 
 const DTC_REGEX = /^[PBCU][0-9]{4}$/i;
 
+const RATE_LIMIT_WINDOW_MS = 5 * 60 * 1000;
+const RATE_LIMIT_MAX = 20;
+const rateLimitStore = new Map();
+
+function checkRateLimit(ip) {
+  const now = Date.now();
+  const entry = rateLimitStore.get(ip);
+  if (!entry || now - entry.windowStart > RATE_LIMIT_WINDOW_MS) {
+    rateLimitStore.set(ip, { windowStart: now, count: 1 });
+    return true;
+  }
+  entry.count += 1;
+  return entry.count <= RATE_LIMIT_MAX;
+}
+
+function timingSafeEqualStr(a, b) {
+  const bufA = Buffer.from(String(a));
+  const bufB = Buffer.from(String(b));
+  if (bufA.length !== bufB.length) {
+    crypto.timingSafeEqual(bufA, bufA);
+    return false;
+  }
+  return crypto.timingSafeEqual(bufA, bufB);
+}
+
+function requirePassword(req, res, next) {
+  const appPassword = process.env.APP_PASSWORD;
+  if (!appPassword) {
+    return res.status(500).json({ error: "APP_PASSWORD не настроен на сервере" });
+  }
+  const provided = req.headers["x-app-password"] || "";
+  if (!timingSafeEqualStr(provided, appPassword)) {
+    return res.status(401).json({ error: "Неверный пароль доступа" });
+  }
+  next();
+}
+
+function requireRateLimit(req, res, next) {
+  const ip = req.headers["x-forwarded-for"]?.split(",")[0]?.trim() || req.socket.remoteAddress;
+  if (!checkRateLimit(ip)) {
+    return res.status(429).json({ error: "Слишком много запросов. Попробуйте позже." });
+  }
+  next();
+}
+
 app.get("/api/health", (req, res) => {
   res.json({ ok: true, hasKey: Boolean(process.env.GROQ_API_KEY) && process.env.GROQ_API_KEY !== "your_key_here" });
 });
 
-app.post("/api/diagnose", async (req, res) => {
+app.post("/api/diagnose", requireRateLimit, requirePassword, async (req, res) => {
   try {
     const { vehicle, dtc, freezeFrame } = req.body;
 
@@ -73,7 +125,7 @@ app.post("/api/diagnose", async (req, res) => {
   }
 });
 
-app.post("/api/chat", async (req, res) => {
+app.post("/api/chat", requireRateLimit, requirePassword, async (req, res) => {
   try {
     const { messages, context } = req.body;
 
