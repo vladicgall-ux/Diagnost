@@ -1,30 +1,32 @@
-import { useRef, useState, useEffect } from "react";
-import { Gauge, AlertOctagon } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Gauge, AlertOctagon, Loader2 } from "lucide-react";
 import BluetoothScanner from "./components/BluetoothScanner";
 import ScannerForm from "./components/ScannerForm";
 import DiagnosticSkeleton from "./components/DiagnosticSkeleton";
 import DiagnosticReport from "./components/DiagnosticReport";
-import { runDiagnose } from "./lib/api";
-
-const APP_PASSWORD = "1234567890";
-const AUTH_STORAGE_KEY = "diagnost_auth";
+import { runDiagnose, login, fetchSession } from "./lib/api";
 
 function LoginGate({ onSuccess }) {
   const [value, setValue] = useState("");
   const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    if (value === APP_PASSWORD) {
-      sessionStorage.setItem(AUTH_STORAGE_KEY, APP_PASSWORD);
+    setSubmitting(true);
+    setError("");
+    try {
+      await login(value);
       onSuccess();
-    } else {
-      setError("Неверный пароль");
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSubmitting(false);
     }
   };
 
   return (
-    <div className="min-h-svh flex items-center justify-center bg-[#0b0d12] px-4">
+    <div className="flex min-h-svh items-center justify-center bg-[#0b0d12] px-4">
       <form onSubmit={handleSubmit} className="w-full max-w-xs space-y-4 rounded-2xl border border-white/10 bg-white/5 p-6">
         <div className="flex items-center gap-2">
           <Gauge className="text-orange-500" size={22} />
@@ -46,9 +48,10 @@ function LoginGate({ onSuccess }) {
         )}
         <button
           type="submit"
-          className="w-full rounded-lg bg-orange-500 py-2 text-sm font-semibold text-white hover:bg-orange-600"
+          disabled={submitting}
+          className="w-full rounded-lg bg-orange-500 py-2 text-sm font-semibold text-white hover:bg-orange-600 disabled:opacity-60"
         >
-          Войти
+          {submitting ? "Входим..." : "Войти"}
         </button>
       </form>
     </div>
@@ -56,7 +59,7 @@ function LoginGate({ onSuccess }) {
 }
 
 export default function App() {
-  const [authed, setAuthed] = useState(false);
+  const [authed, setAuthed] = useState(null); // null = checking, then true/false
   const [loading, setLoading] = useState(false);
   const [report, setReport] = useState(null);
   const [context, setContext] = useState(null);
@@ -66,9 +69,9 @@ export default function App() {
   const obdRef = useRef(null);
 
   useEffect(() => {
-    if (sessionStorage.getItem(AUTH_STORAGE_KEY) === APP_PASSWORD) {
-      setAuthed(true);
-    }
+    fetchSession()
+      .then((data) => setAuthed(Boolean(data.authed)))
+      .catch(() => setAuthed(false));
   }, []);
 
   const handleDiagnose = async (payload) => {
@@ -80,11 +83,23 @@ export default function App() {
       setReport(result);
       setContext(payload);
     } catch (err) {
-      setError(err.message);
+      if (err.message === "Требуется вход") {
+        setAuthed(false);
+      } else {
+        setError(err.message);
+      }
     } finally {
       setLoading(false);
     }
   };
+
+  if (authed === null) {
+    return (
+      <div className="flex min-h-svh items-center justify-center gap-2 bg-[#0b0d12] text-sm text-gray-500">
+        <Loader2 size={16} className="animate-spin" /> Загрузка...
+      </div>
+    );
+  }
 
   if (!authed) {
     return <LoginGate onSuccess={() => setAuthed(true)} />;

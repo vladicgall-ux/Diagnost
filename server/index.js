@@ -1,9 +1,19 @@
 import express from "express";
 import cors from "cors";
-import crypto from "crypto";
 import dotenv from "dotenv";
 import Groq from "groq-sdk";
 import { DIAGNOSE_SYSTEM_PROMPT, CHAT_SYSTEM_PROMPT } from "./prompts.js";
+import {
+  timingSafeEqualStr,
+  signSession,
+  verifySession,
+  parseCookies,
+  sessionCookieHeader,
+  clearSessionCookieHeader,
+  SESSION_COOKIE_NAME,
+  makeRateLimiter,
+  getClientIp,
+} from "./auth.js";
 
 dotenv.config({ path: "../.env" });
 dotenv.config();
@@ -14,6 +24,7 @@ const allowedOrigin = process.env.ALLOWED_ORIGIN || null;
 app.use(
   cors({
     origin: allowedOrigin ? allowedOrigin.split(",").map((s) => s.trim()) : false,
+    credentials: true,
   })
 );
 app.use(express.json());
@@ -23,46 +34,19 @@ const MODEL = "openai/gpt-oss-120b";
 
 const DTC_REGEX = /^[PBCU][0-9]{4}$/i;
 
-const RATE_LIMIT_WINDOW_MS = 5 * 60 * 1000;
-const RATE_LIMIT_MAX = 20;
-const rateLimitStore = new Map();
+const checkApiRateLimit = makeRateLimiter(5 * 60 * 1000, 20);
+const checkLoginRateLimit = makeRateLimiter(5 * 60 * 1000, 10);
 
-function checkRateLimit(ip) {
-  const now = Date.now();
-  const entry = rateLimitStore.get(ip);
-  if (!entry || now - entry.windowStart > RATE_LIMIT_WINDOW_MS) {
-    rateLimitStore.set(ip, { windowStart: now, count: 1 });
-    return true;
-  }
-  entry.count += 1;
-  return entry.count <= RATE_LIMIT_MAX;
-}
-
-function timingSafeEqualStr(a, b) {
-  const bufA = Buffer.from(String(a));
-  const bufB = Buffer.from(String(b));
-  if (bufA.length !== bufB.length) {
-    crypto.timingSafeEqual(bufA, bufA);
-    return false;
-  }
-  return crypto.timingSafeEqual(bufA, bufB);
-}
-
-function requirePassword(req, res, next) {
-  const appPassword = process.env.APP_PASSWORD;
-  if (!appPassword) {
-    return res.status(500).json({ error: "APP_PASSWORD не настроен на сервере" });
-  }
-  const provided = req.headers["x-app-password"] || "";
-  if (!timingSafeEqualStr(provided, appPassword)) {
-    return res.status(401).json({ error: "Неверный пароль доступа" });
+function requireSession(req, res, next) {
+  const cookies = parseCookies(req.headers.cookie);
+  if (!verifySession(cookies[SESSION_COOKIE_NAME])) {
+    return res.status(401).json({ error: "Требуется вход" });
   }
   next();
 }
 
-function requireRateLimit(req, res, next) {
-  const ip = req.headers["x-forwarded-for"]?.split(",")[0]?.trim() || req.socket.remoteAddress;
-  if (!checkRateLimit(ip)) {
+function requireApiRateLimit(req, res, next) {
+  if (!checkApiRateLimit(getClientIp(req))) {
     return res.status(429).json({ error: "Слишком много запросов. Попробуйте позже." });
   }
   next();
@@ -72,7 +56,33 @@ app.get("/api/health", (req, res) => {
   res.json({ ok: true, hasKey: Boolean(process.env.GROQ_API_KEY) && process.env.GROQ_API_KEY !== "your_key_here" });
 });
 
-app.post("/api/diagnose", requireRateLimit, requirePassword, async (req, res) => {
+app.post("/api/login", (req, res) => {
+  if (!checkLoginRateLimit(getClientIp(req))) {
+    return res.status(429).json({ error: "Слишком много попыток входа. Попробуйте позже." });
+  }
+  const appPassword = process.env.APP_PASSWORD;
+  if (!appPassword) {
+    return res.status(500).json({ error: "APP_PASSWORD не настроен на сервере" });
+  }
+  const { password } = req.body || {};
+  if (!timingSafeEqualStr(String(password || ""), appPassword)) {
+    return res.status(401).json({ error: "Неверный пароль" });
+  }
+  res.setHeader("Set-Cookie", sessionCookieHeader(signSession()));
+  res.json({ ok: true });
+});
+
+app.get("/api/session", (req, res) => {
+  const cookies = parseCookies(req.headers.cookie);
+  res.json({ authed: verifySession(cookies[SESSION_COOKIE_NAME]) });
+});
+
+app.post("/api/logout", (req, res) => {
+  res.setHeader("Set-Cookie", clearSessionCookieHeader());
+  res.json({ ok: true });
+});
+
+app.post("/api/diagnose", requireApiRateLimit, requireSession, async (req, res) => {
   try {
     const { vehicle, dtc, freezeFrame } = req.body;
 
@@ -125,7 +135,7 @@ app.post("/api/diagnose", requireRateLimit, requirePassword, async (req, res) =>
   }
 });
 
-app.post("/api/chat", requireRateLimit, requirePassword, async (req, res) => {
+app.post("/api/chat", requireApiRateLimit, requireSession, async (req, res) => {
   try {
     const { messages, context } = req.body;
 
