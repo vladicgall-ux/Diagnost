@@ -16,12 +16,12 @@ export async function fetchSession() {
   return res.json();
 }
 
-export async function runDiagnose({ vehicle, dtc, freezeFrame }) {
+export async function runDiagnose({ vehicle, dtc, freezeFrame, permanentCodes }) {
   const res = await fetch("/api/diagnose", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     credentials: "same-origin",
-    body: JSON.stringify({ vehicle, dtc, freezeFrame }),
+    body: JSON.stringify({ vehicle, dtc, freezeFrame, permanentCodes }),
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || "Ошибка диагностики");

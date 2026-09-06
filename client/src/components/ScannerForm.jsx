@@ -32,6 +32,7 @@ export default function ScannerForm({ onDiagnose, loading, obdConnected, obdRef,
   const [obdBusy, setObdBusy] = useState(false);
   const [obdError, setObdError] = useState("");
   const [foundCodes, setFoundCodes] = useState(null);
+  const [permanentCodes, setPermanentCodes] = useState(null);
 
   const [makeCustom, setMakeCustom] = useState(false);
   const [modelCustom, setModelCustom] = useState(false);
@@ -97,15 +98,16 @@ export default function ScannerForm({ onDiagnose, loading, obdConnected, obdRef,
     }
   };
 
-  const diagnoseCode = (code, ff) => {
+  const diagnoseCode = (code, ff, permanent) => {
     setDtc(code);
     setDtcError("");
-    onDiagnose({ vehicle, dtc: code, freezeFrame: ff });
+    onDiagnose({ vehicle, dtc: code, freezeFrame: ff, permanentCodes: permanent ?? permanentCodes ?? [] });
   };
 
   const runFromOBD = async () => {
     setObdError("");
     setFoundCodes(null);
+    setPermanentCodes(null);
     setObdBusy(true);
     try {
       const codes = await obdRef.current.readDTCs();
@@ -114,9 +116,18 @@ export default function ScannerForm({ onDiagnose, loading, obdConnected, obdRef,
         return;
       }
       setFoundCodes(codes);
-      const ff = await obdRef.current.readFreezeFrame().catch(() => freezeFrame);
+
+      const permanent = await obdRef.current.readPermanentDTCs().catch(() => []);
+      setPermanentCodes(permanent);
+
+      // Prefer the real stored freeze frame (values at the moment the fault
+      // happened); fall back to live "right now" sensors when the car/adapter
+      // doesn't support mode 02.
+      let ff = await obdRef.current.readStoredFreezeFrame().catch(() => null);
+      if (!ff) ff = await obdRef.current.readLiveSensors().catch(() => freezeFrame);
       setFreezeFrame(ff);
-      diagnoseCode(codes[0], ff);
+
+      diagnoseCode(codes[0], ff, permanent);
     } catch (err) {
       setObdError(err.message || "Не удалось считать данные с автомобиля.");
     } finally {
@@ -314,7 +325,7 @@ export default function ScannerForm({ onDiagnose, loading, obdConnected, obdRef,
               <button
                 key={c}
                 type="button"
-                onClick={() => diagnoseCode(c, freezeFrame)}
+                onClick={() => diagnoseCode(c, freezeFrame, permanentCodes)}
                 className={`rounded-full border px-3 py-1.5 font-mono text-xs transition ${
                   c === dtc
                     ? "border-orange-500/50 bg-orange-500/15 text-orange-300"
@@ -325,6 +336,12 @@ export default function ScannerForm({ onDiagnose, loading, obdConnected, obdRef,
               </button>
             ))}
           </div>
+          {permanentCodes && permanentCodes.length > 0 && (
+            <p className="mt-2.5 text-xs text-red-400">
+              Плюс {permanentCodes.length} {permanentCodes.length === 1 ? "постоянный код" : "постоянных кода"}{" "}
+              ({permanentCodes.join(", ")}) — их нельзя стереть сбросом или отключением батареи.
+            </p>
+          )}
         </div>
       )}
 

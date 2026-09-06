@@ -1,5 +1,5 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
-import { Bluetooth, BluetoothConnected, Loader2, ScanLine, Gauge, Unplug, IdCard, Eraser, CheckCircle2, Route } from "lucide-react";
+import { Bluetooth, BluetoothConnected, Loader2, ScanLine, Gauge, Unplug, IdCard, Eraser, CheckCircle2, Route, ShieldAlert, ClipboardCheck } from "lucide-react";
 import { OBDBluetoothClient } from "../lib/obd";
 import { decodeVIN } from "../lib/vinDecode";
 
@@ -7,9 +7,11 @@ const BluetoothScanner = forwardRef(function BluetoothScanner({ onData, onStatus
   const [supported] = useState(() => OBDBluetoothClient.isSupported());
   const [status, setStatus] = useState("idle"); // idle | connecting | connected
   const [deviceName, setDeviceName] = useState("");
-  const [busy, setBusy] = useState(""); // "" | "dtc" | "ff" | "clear"
+  const [busy, setBusy] = useState(""); // "" | "dtc" | "ff" | "clear" | "permanent" | "monitors"
   const [error, setError] = useState("");
   const [foundCodes, setFoundCodes] = useState(null);
+  const [permanentCodes, setPermanentCodes] = useState(null);
+  const [monitorStatus, setMonitorStatus] = useState(null);
   const [vinStatus, setVinStatus] = useState(""); // "" | "reading" | "done" | "failed"
   const [odometer, setOdometer] = useState(null); // number | "unsupported" | null
   const [clearedAt, setClearedAt] = useState(0);
@@ -25,9 +27,17 @@ const BluetoothScanner = forwardRef(function BluetoothScanner({ onData, onStatus
       if (!clientRef.current) throw new Error("Адаптер не подключён.");
       return clientRef.current.readDTCs();
     },
-    readFreezeFrame: () => {
+    readPermanentDTCs: () => {
       if (!clientRef.current) throw new Error("Адаптер не подключён.");
-      return clientRef.current.readFreezeFrame();
+      return clientRef.current.readPermanentDTCs();
+    },
+    readLiveSensors: () => {
+      if (!clientRef.current) throw new Error("Адаптер не подключён.");
+      return clientRef.current.readLiveSensors();
+    },
+    readStoredFreezeFrame: () => {
+      if (!clientRef.current) throw new Error("Адаптер не подключён.");
+      return clientRef.current.readStoredFreezeFrame();
     },
   }));
 
@@ -106,6 +116,8 @@ const BluetoothScanner = forwardRef(function BluetoothScanner({ onData, onStatus
     setStatus("idle");
     setDeviceName("");
     setFoundCodes(null);
+    setPermanentCodes(null);
+    setMonitorStatus(null);
     setVinStatus("");
     setOdometer(null);
     onStatusChange?.(false);
@@ -132,15 +144,45 @@ const BluetoothScanner = forwardRef(function BluetoothScanner({ onData, onStatus
     }
   };
 
-  const handleReadFreezeFrame = async () => {
+  const handleReadLiveSensors = async () => {
     if (!clientRef.current) return;
     setBusy("ff");
     setError("");
     try {
-      const freezeFrame = await clientRef.current.readFreezeFrame();
+      const freezeFrame = await clientRef.current.readLiveSensors();
       onData({ freezeFrame });
     } catch (err) {
       setError(err.message || "Не удалось считать показания приборов.");
+    } finally {
+      setBusy("");
+    }
+  };
+
+  const handleReadPermanentDTCs = async () => {
+    if (!clientRef.current) return;
+    setBusy("permanent");
+    setError("");
+    setPermanentCodes(null);
+    try {
+      const codes = await clientRef.current.readPermanentDTCs();
+      setPermanentCodes(codes);
+    } catch (err) {
+      setError(err.message || "Не удалось считать постоянные коды.");
+    } finally {
+      setBusy("");
+    }
+  };
+
+  const handleReadMonitorStatus = async () => {
+    if (!clientRef.current) return;
+    setBusy("monitors");
+    setError("");
+    setMonitorStatus(null);
+    try {
+      const status = await clientRef.current.readMonitorStatus();
+      setMonitorStatus(status);
+    } catch (err) {
+      setError(err.message || "Не удалось считать готовность систем.");
     } finally {
       setBusy("");
     }
@@ -253,12 +295,31 @@ const BluetoothScanner = forwardRef(function BluetoothScanner({ onData, onStatus
             </button>
             <button
               type="button"
-              onClick={handleReadFreezeFrame}
+              onClick={handleReadLiveSensors}
               disabled={busy !== ""}
               className="flex items-center justify-center gap-1.5 rounded-lg border border-green-500/30 bg-green-500/10 py-2.5 text-xs text-green-300 transition hover:bg-green-500/20 disabled:opacity-60"
             >
               {busy === "ff" ? <Loader2 size={14} className="animate-spin" /> : <Gauge size={14} />}
               Считать датчики
+            </button>
+            <button
+              type="button"
+              onClick={handleReadPermanentDTCs}
+              disabled={busy !== ""}
+              className="flex items-center justify-center gap-1.5 rounded-lg border border-red-500/30 bg-red-500/10 py-2.5 text-xs text-red-300 transition hover:bg-red-500/20 disabled:opacity-60"
+              title="Коды, которые нельзя стереть сбросом — полезно для проверки б/у авто"
+            >
+              {busy === "permanent" ? <Loader2 size={14} className="animate-spin" /> : <ShieldAlert size={14} />}
+              Постоянные ошибки
+            </button>
+            <button
+              type="button"
+              onClick={handleReadMonitorStatus}
+              disabled={busy !== ""}
+              className="flex items-center justify-center gap-1.5 rounded-lg border border-blue-500/30 bg-blue-500/10 py-2.5 text-xs text-blue-300 transition hover:bg-blue-500/20 disabled:opacity-60"
+            >
+              {busy === "monitors" ? <Loader2 size={14} className="animate-spin" /> : <ClipboardCheck size={14} />}
+              Готовность систем
             </button>
             <button
               type="button"
@@ -302,6 +363,47 @@ const BluetoothScanner = forwardRef(function BluetoothScanner({ onData, onStatus
               >
                 {c}
               </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {permanentCodes && (
+        <div className="mt-3 rounded-lg border border-red-500/20 bg-red-500/5 p-3">
+          <p className="mb-1.5 flex items-center gap-1.5 text-xs text-red-300">
+            <ShieldAlert size={13} />
+            {permanentCodes.length === 0
+              ? "Постоянных кодов нет."
+              : `Постоянные коды (${permanentCodes.length}) — их нельзя стереть сбросом или отключением батареи:`}
+          </p>
+          {permanentCodes.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {permanentCodes.map((c) => (
+                <span key={c} className="rounded-full border border-red-500/30 bg-red-500/10 px-3 py-1 font-mono text-xs text-red-300">
+                  {c}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {monitorStatus && (
+        <div className="mt-3 rounded-lg border border-blue-500/20 bg-blue-500/5 p-3">
+          <p className="mb-1.5 flex items-center gap-1.5 text-xs text-blue-300">
+            <ClipboardCheck size={13} />
+            Check Engine: {monitorStatus.milOn ? "горит" : "не горит"}, кодов: {monitorStatus.dtcCount}
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {monitorStatus.monitors.map((m) => (
+              <span
+                key={m.name}
+                className={`rounded-full px-2.5 py-1 text-[11px] ${
+                  m.ready ? "bg-green-500/10 text-green-400" : "bg-yellow-500/10 text-yellow-400"
+                }`}
+              >
+                {m.name}: {m.ready ? "готово" : "не готово"}
+              </span>
             ))}
           </div>
         </div>

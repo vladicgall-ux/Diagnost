@@ -25,6 +25,10 @@ const PROFILES = [
 
 const ALL_SERVICE_UUIDS = [...new Set(PROFILES.map((p) => p.service))];
 
+function cleanHex(raw) {
+  return raw.replace(/[^0-9A-Fa-f]/g, "").toUpperCase();
+}
+
 function decodeDTC(hex4) {
   const b1 = parseInt(hex4.slice(0, 2), 16);
   const b2 = hex4.slice(2, 4).toUpperCase();
@@ -35,11 +39,13 @@ function decodeDTC(hex4) {
   return `${letter}${digit1}${digit2}${b2}`;
 }
 
-function parseDTCResponse(raw) {
-  const clean = raw.replace(/[^0-9A-Fa-f]/g, "").toUpperCase();
-  const idx = clean.indexOf("43");
+// marker: the mode-response byte pair that precedes the DTC words, e.g.
+// "43" for mode 03 (stored), "47" for mode 07 (pending), "4A" for mode 0A (permanent).
+function parseDTCResponse(raw, marker) {
+  const clean = cleanHex(raw);
+  const idx = clean.indexOf(marker);
   if (idx === -1) return [];
-  const body = clean.slice(idx + 2);
+  const body = clean.slice(idx + marker.length);
   const codes = [];
   for (let i = 0; i + 4 <= body.length; i += 4) {
     const word = body.slice(i, i + 4);
@@ -49,89 +55,48 @@ function parseDTCResponse(raw) {
   return codes;
 }
 
-function extractBytes(raw, modePidHexNoSpace) {
-  const clean = raw.replace(/[^0-9A-Fa-f]/g, "").toUpperCase();
-  const idx = clean.indexOf(modePidHexNoSpace);
+function decodeBytes(raw, marker, numBytes) {
+  const clean = cleanHex(raw);
+  const idx = clean.indexOf(marker);
   if (idx === -1) return null;
-  return clean.slice(idx + modePidHexNoSpace.length);
+  const hex = clean.slice(idx + marker.length, idx + marker.length + numBytes * 2);
+  if (hex.length < numBytes * 2) return null;
+  const bytes = [];
+  for (let i = 0; i < numBytes; i++) bytes.push(parseInt(hex.slice(i * 2, i * 2 + 2), 16));
+  return bytes;
 }
 
-function parseRPM(raw) {
-  const bytes = extractBytes(raw, "410C");
-  if (!bytes || bytes.length < 4) return null;
-  const a = parseInt(bytes.slice(0, 2), 16);
-  const b = parseInt(bytes.slice(2, 4), 16);
-  return Math.round((a * 256 + b) / 4);
-}
-
-function parseCoolantTemp(raw) {
-  const bytes = extractBytes(raw, "4105");
-  if (!bytes || bytes.length < 2) return null;
-  return parseInt(bytes.slice(0, 2), 16) - 40;
-}
-
-function parseFuelTrim(raw, pidHex) {
-  const bytes = extractBytes(raw, pidHex);
-  if (!bytes || bytes.length < 2) return null;
-  const a = parseInt(bytes.slice(0, 2), 16);
-  return +(((a - 128) * 100) / 128).toFixed(1);
-}
-
-function parseSpeed(raw) {
-  const bytes = extractBytes(raw, "410D");
-  if (!bytes || bytes.length < 2) return null;
-  return parseInt(bytes.slice(0, 2), 16);
-}
-
-function parseEngineLoad(raw) {
-  const bytes = extractBytes(raw, "4104");
-  if (!bytes || bytes.length < 2) return null;
-  const a = parseInt(bytes.slice(0, 2), 16);
-  return +((a * 100) / 255).toFixed(1);
-}
-
-function parseIntakeMAP(raw) {
-  const bytes = extractBytes(raw, "410B");
-  if (!bytes || bytes.length < 2) return null;
-  return parseInt(bytes.slice(0, 2), 16); // kPa, direct byte value
-}
-
-function parseThrottlePosition(raw) {
-  const bytes = extractBytes(raw, "4111");
-  if (!bytes || bytes.length < 2) return null;
-  const a = parseInt(bytes.slice(0, 2), 16);
-  return +((a * 100) / 255).toFixed(1);
-}
-
-function parseIntakeAirTemp(raw) {
-  const bytes = extractBytes(raw, "410F");
-  if (!bytes || bytes.length < 2) return null;
-  return parseInt(bytes.slice(0, 2), 16) - 40;
-}
+// One entry per PID we care about, shared between live data (mode 01) and
+// the real freeze frame (mode 02) — same PID numbers, same byte math, just
+// a different mode byte and (for mode 02) a trailing frame-number byte.
+const PID_DEFS = {
+  rpm: { pid: "0C", bytes: 2, decode: ([a, b]) => Math.round((a * 256 + b) / 4) },
+  coolantTemp: { pid: "05", bytes: 1, decode: ([a]) => a - 40 },
+  stft: { pid: "06", bytes: 1, decode: ([a]) => +(((a - 128) * 100) / 128).toFixed(1) },
+  ltft: { pid: "07", bytes: 1, decode: ([a]) => +(((a - 128) * 100) / 128).toFixed(1) },
+  speed: { pid: "0D", bytes: 1, decode: ([a]) => a },
+  engineLoad: { pid: "04", bytes: 1, decode: ([a]) => +((a * 100) / 255).toFixed(1) },
+  intakeMAP: { pid: "0B", bytes: 1, decode: ([a]) => a },
+  throttlePosition: { pid: "11", bytes: 1, decode: ([a]) => +((a * 100) / 255).toFixed(1) },
+  intakeAirTemp: { pid: "0F", bytes: 1, decode: ([a]) => a - 40 },
+};
 
 function parseMilDistance(raw) {
-  const bytes = extractBytes(raw, "4121");
-  if (!bytes || bytes.length < 4) return null;
-  const a = parseInt(bytes.slice(0, 2), 16);
-  const b = parseInt(bytes.slice(2, 4), 16);
-  return a * 256 + b; // km
+  const bytes = decodeBytes(raw, "4121", 2);
+  return bytes ? bytes[0] * 256 + bytes[1] : null; // km
 }
 
 function parseOdometer(raw) {
   // PID 0xA6 "Odometer" — added to OBD-II in SAE J1979-2 (mandatory on many
   // markets only from ~2019+). Older or non-compliant vehicles won't answer.
-  const bytes = extractBytes(raw, "41A6");
-  if (!bytes || bytes.length < 8) return null;
-  const a = parseInt(bytes.slice(0, 2), 16);
-  const b = parseInt(bytes.slice(2, 4), 16);
-  const c = parseInt(bytes.slice(4, 6), 16);
-  const d = parseInt(bytes.slice(6, 8), 16);
-  const raw32 = a * 16777216 + b * 65536 + c * 256 + d;
-  return +(raw32 * 0.1).toFixed(1); // km
+  const bytes = decodeBytes(raw, "41A6", 4);
+  if (!bytes) return null;
+  const [a, b, c, d] = bytes;
+  return +((a * 16777216 + b * 65536 + c * 256 + d) * 0.1).toFixed(1); // km
 }
 
 function parseVIN(raw) {
-  const clean = raw.replace(/[^0-9A-Fa-f]/g, "").toUpperCase();
+  const clean = cleanHex(raw);
   const idx = clean.indexOf("4902");
   if (idx === -1) return null;
   let body = clean.slice(idx + 4);
@@ -146,6 +111,43 @@ function parseVIN(raw) {
   }
   vin = vin.slice(-17); // keep the last 17 printable chars in case of leading noise
   return vin.length === 17 ? vin : null;
+}
+
+// Standard monitor names per SAE J1979, in the fixed bit order the spec
+// defines for bytes C/D of PID 0x01 — different table for spark vs
+// compression ignition engines (indicated by a bit in byte B).
+const SPARK_MONITORS = [
+  "Катализатор", "Подогрев катализатора", "Улавливание паров топлива (EVAP)",
+  "Система вторичного воздуха", "Хладагент кондиционера", "Датчик кислорода",
+  "Подогрев датчика кислорода", "Рециркуляция ОГ (EGR)",
+];
+const COMPRESSION_MONITORS = [
+  "NMHC-катализатор", "Система NOx/SCR", null, "Датчик отработавших газов",
+  "Сажевый фильтр (DPF)", "Наддув", null, "EGR/VVT",
+];
+
+function parseMonitorStatus(raw) {
+  const bytes = decodeBytes(raw, "4101", 4);
+  if (!bytes) return null;
+  const [a, b, c, d] = bytes;
+  const isCompression = !!(b & 0x08);
+  const continuous = [
+    { name: "Пропуски зажигания", supported: !!(b & 0x01), ready: !(b & 0x10) },
+    { name: "Топливная система", supported: !!(b & 0x02), ready: !(b & 0x20) },
+    { name: "Общие компоненты", supported: !!(b & 0x04), ready: !(b & 0x40) },
+  ].filter((m) => m.supported);
+
+  const names = isCompression ? COMPRESSION_MONITORS : SPARK_MONITORS;
+  const nonContinuous = names
+    .map((name, i) => (name && c & (1 << i) ? { name, supported: true, ready: !(d & (1 << i)) } : null))
+    .filter(Boolean);
+
+  return {
+    milOn: !!(a & 0x80),
+    dtcCount: a & 0x7f,
+    isCompression,
+    monitors: [...continuous, ...nonContinuous],
+  };
 }
 
 export class OBDBluetoothClient {
@@ -261,9 +263,24 @@ export class OBDBluetoothClient {
     await this.sendCommand("ATSP0");
   }
 
+  // Mode 03: active/confirmed DTCs — the ones that lit the Check Engine light.
   async readDTCs() {
-    const raw = await this.sendCommand("03");
-    return parseDTCResponse(raw);
+    return parseDTCResponse(await this.sendCommand("03"), "43");
+  }
+
+  // Mode 07: pending DTCs — detected but not yet confirmed over enough
+  // drive cycles to turn the light on. Useful for catching a problem early.
+  async readPendingDTCs() {
+    return parseDTCResponse(await this.sendCommand("07"), "47");
+  }
+
+  // Mode 0A: permanent DTCs. These cannot be erased by mode 04, by
+  // disconnecting the battery, or by any generic scan tool — only by the
+  // car itself, after the underlying fault is actually fixed and confirmed
+  // over real drive cycles. Good for checking a used car honestly: a
+  // seller who cleared the active codes can't hide these.
+  async readPermanentDTCs() {
+    return parseDTCResponse(await this.sendCommand("0A"), "4A");
   }
 
   async readVIN() {
@@ -294,31 +311,46 @@ export class OBDBluetoothClient {
     return true;
   }
 
-  async readFreezeFrame() {
+  // Mode 01: the car's sensors RIGHT NOW, not at the moment of the fault.
+  async readLiveSensors() {
+    const out = {};
     // ELM327 talks to the car one command at a time over a serial-like
     // link, so these must run sequentially, never in parallel.
-    const rpmRaw = await this.sendCommand("010C").catch(() => "");
-    const tempRaw = await this.sendCommand("0105").catch(() => "");
-    const stftRaw = await this.sendCommand("0106").catch(() => "");
-    const ltftRaw = await this.sendCommand("0107").catch(() => "");
-    const speedRaw = await this.sendCommand("010D").catch(() => "");
-    const loadRaw = await this.sendCommand("0104").catch(() => "");
-    const mapRaw = await this.sendCommand("010B").catch(() => "");
-    const throttleRaw = await this.sendCommand("0111").catch(() => "");
-    const iatRaw = await this.sendCommand("010F").catch(() => "");
+    for (const [key, def] of Object.entries(PID_DEFS)) {
+      const raw = await this.sendCommand("01" + def.pid).catch(() => "");
+      const bytes = decodeBytes(raw, "41" + def.pid, def.bytes);
+      out[key] = bytes ? def.decode(bytes) : "";
+    }
     const milDistRaw = await this.sendCommand("0121").catch(() => "");
+    out.milDistance = parseMilDistance(milDistRaw) ?? "";
+    return out;
+  }
 
-    return {
-      rpm: parseRPM(rpmRaw) ?? "",
-      coolantTemp: parseCoolantTemp(tempRaw) ?? "",
-      stft: parseFuelTrim(stftRaw, "4106") ?? "",
-      ltft: parseFuelTrim(ltftRaw, "4107") ?? "",
-      speed: parseSpeed(speedRaw) ?? "",
-      engineLoad: parseEngineLoad(loadRaw) ?? "",
-      intakeMAP: parseIntakeMAP(mapRaw) ?? "",
-      throttlePosition: parseThrottlePosition(throttleRaw) ?? "",
-      intakeAirTemp: parseIntakeAirTemp(iatRaw) ?? "",
-      milDistance: parseMilDistance(milDistRaw) ?? "",
-    };
+  // Mode 02: the REAL freeze frame — sensor values the car recorded at the
+  // exact moment the fault was set, not "right now". Falls back to null
+  // when the car has no freeze frame stored (no active DTC) or the
+  // adapter/vehicle doesn't support mode 02 — the caller should fall back
+  // to readLiveSensors() in that case.
+  async readStoredFreezeFrame() {
+    const dtcRaw = await this.sendCommand("0102").catch(() => "");
+    const dtcBytes = decodeBytes(dtcRaw, "4102", 2);
+    if (!dtcBytes || (dtcBytes[0] === 0 && dtcBytes[1] === 0)) return null;
+
+    const out = {};
+    let anyData = false;
+    for (const [key, def] of Object.entries(PID_DEFS)) {
+      const raw = await this.sendCommand("02" + def.pid + "00").catch(() => "");
+      const bytes = decodeBytes(raw, "42" + def.pid + "00", def.bytes);
+      out[key] = bytes ? def.decode(bytes) : "";
+      if (bytes) anyData = true;
+    }
+    return anyData ? out : null;
+  }
+
+  // Mode 01 PID 01: which emission-related self-tests have finished since
+  // codes were last cleared — what a tech inspection actually checks for.
+  async readMonitorStatus() {
+    const raw = await this.sendCommand("0101");
+    return parseMonitorStatus(raw);
   }
 }

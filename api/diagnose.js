@@ -26,7 +26,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { vehicle, dtc, freezeFrame } = req.body || {};
+    const { vehicle, dtc, freezeFrame, permanentCodes } = req.body || {};
 
     if (!dtc || !DTC_REGEX.test(String(dtc).trim())) {
       res.status(400).json({ error: "Некорректный формат кода ошибки. Пример: P0300" });
@@ -57,6 +57,12 @@ export default async function handler(req, res) {
 Положение дроссельной заслонки (%): ${freezeFrame?.throttlePosition ?? "нет данных"}
 Температура впускного воздуха (°C): ${freezeFrame?.intakeAirTemp ?? "нет данных"}
 Пробег с горящим Check Engine (км): ${freezeFrame?.milDistance ?? "нет данных"}
+
+${
+  Array.isArray(permanentCodes) && permanentCodes.length > 0
+    ? `Постоянные коды ошибок (не стираются сбросом или отключением батареи, указывают на давнюю/подтверждённую неисправность): ${permanentCodes.join(", ")}`
+    : "Постоянных кодов нет."
+}
 
 Дай диагностику строго в формате JSON, описанном в системном промпте.`;
 
