@@ -25,6 +25,22 @@ const PROFILES = [
 
 const ALL_SERVICE_UUIDS = [...new Set(PROFILES.map((p) => p.service))];
 
+function withTimeout(promise, ms, message) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(message)), ms);
+    promise.then(
+      (v) => {
+        clearTimeout(timer);
+        resolve(v);
+      },
+      (e) => {
+        clearTimeout(timer);
+        reject(e);
+      }
+    );
+  });
+}
+
 function cleanHex(raw) {
   return raw.replace(/[^0-9A-Fa-f]/g, "").toUpperCase();
 }
@@ -181,18 +197,26 @@ export class OBDBluetoothClient {
       this.onDisconnected?.();
     });
 
-    const server = await this.device.gatt.connect();
+    const server = await withTimeout(
+      this.device.gatt.connect(),
+      10000,
+      "Не удалось установить связь с адаптером за 10 секунд. Убедитесь, что он вставлен в машину и не занят другим телефоном/приложением, затем попробуйте снова."
+    );
 
     let connected = false;
     for (const profile of PROFILES) {
       try {
-        const service = await server.getPrimaryService(profile.service);
+        const service = await withTimeout(
+          server.getPrimaryService(profile.service),
+          6000,
+          "профиль не отвечает"
+        );
         const writeChar = await service.getCharacteristic(profile.write);
         const notifyChar =
           profile.notify === profile.write
             ? writeChar
             : await service.getCharacteristic(profile.notify);
-        await notifyChar.startNotifications();
+        await withTimeout(notifyChar.startNotifications(), 6000, "профиль не отвечает");
         notifyChar.addEventListener("characteristicvaluechanged", (e) =>
           this._handleNotify(e)
         );
@@ -208,11 +232,21 @@ export class OBDBluetoothClient {
     if (!connected) {
       this.device.gatt.disconnect();
       throw new Error(
-        "Не удалось найти совместимый OBD-профиль на этом устройстве."
+        "Не удалось найти совместимый OBD-профиль на этом устройстве. Возможно, у этого адаптера " +
+          "нестандартная BLE-схема — напишите точную модель адаптера."
       );
     }
 
-    await this._initELM327();
+    try {
+      await withTimeout(
+        this._initELM327(),
+        10000,
+        "Адаптер подключился по Bluetooth, но не отвечает на команды ELM327. Попробуйте переподключить его к машине или перезапустить телефон."
+      );
+    } catch (err) {
+      this.device.gatt.disconnect();
+      throw err;
+    }
     return this.device.name || "OBD-адаптер";
   }
 
