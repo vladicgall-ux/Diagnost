@@ -6,6 +6,21 @@ import DiagnosticSkeleton from "./components/DiagnosticSkeleton";
 import DiagnosticReport from "./components/DiagnosticReport";
 import { runDiagnose, login, fetchSession } from "./lib/api";
 
+// Auto-login only inside the installed app (TWA / "Add to Home Screen"),
+// never in a normal browser tab — that keeps the public website itself
+// password-gated. Note this is a convenience gate, not real secrecy: the
+// value below still ships in the public JS bundle either way, same as any
+// client-side check. Only meaningful if the app stays personal/unshared.
+const APP_AUTO_LOGIN_PASSWORD = "1234567890";
+
+function isStandaloneApp() {
+  if (typeof window === "undefined") return false;
+  return (
+    window.matchMedia?.("(display-mode: standalone)")?.matches ||
+    window.navigator?.standalone === true
+  );
+}
+
 function LoginGate({ onSuccess }) {
   const [value, setValue] = useState("");
   const [error, setError] = useState("");
@@ -70,7 +85,22 @@ export default function App() {
 
   useEffect(() => {
     fetchSession()
-      .then((data) => setAuthed(Boolean(data.authed)))
+      .then(async (data) => {
+        if (data.authed) {
+          setAuthed(true);
+          return;
+        }
+        if (isStandaloneApp()) {
+          try {
+            await login(APP_AUTO_LOGIN_PASSWORD);
+            setAuthed(true);
+            return;
+          } catch {
+            // fall through to the manual login screen
+          }
+        }
+        setAuthed(false);
+      })
       .catch(() => setAuthed(false));
   }, []);
 
