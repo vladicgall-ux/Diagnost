@@ -83,6 +83,40 @@ function parseDTCResponse(raw, marker) {
   return codes;
 }
 
+// VAG-group (VW / Škoda / Audi / SEAT) chassis & body modules — ABS,
+// airbag, comfort/central locking, instrument cluster. Generic OBD-II only
+// standardizes the engine/emissions ECU (SAE J1979); these modules are
+// reached through the manufacturer's own UDS (ISO 14229) diagnostic
+// addresses instead. The module addresses below (03/15/46/17) are the
+// same numbers VAG's own dealer tools use and are documented publicly for
+// the MQB platform (~2013+ Octavia/Golf/etc.) — but this has NOT been
+// tested against real hardware, so treat every result as experimental.
+export const VAG_MODULES = [
+  { addr: 0x03, name: "ABS / тормоза" },
+  { addr: 0x15, name: "Подушки безопасности (Airbag)" },
+  { addr: 0x46, name: "Комфорт (центральный замок, стеклоподъёмники)" },
+  { addr: 0x17, name: "Приборная панель" },
+];
+
+// UDS service 0x19 (ReadDTCInformation) response: 59 02 <availabilityMask>
+// then repeated [3 bytes DTC][1 byte status]. Unlike SAE P/B/C/U codes,
+// there is no verified public database mapping these raw 3-byte codes to
+// human descriptions for VAG chassis modules, so they come back as hex.
+function parseUdsDTCs(raw) {
+  const clean = cleanHex(raw);
+  const idx = clean.indexOf("5902");
+  if (idx === -1) return null; // module didn't answer at this address
+  const body = clean.slice(idx + 6);
+  const codes = [];
+  for (let i = 0; i + 8 <= body.length; i += 8) {
+    const dtcHex = body.slice(i, i + 6);
+    if (dtcHex === "000000") continue;
+    const status = parseInt(body.slice(i + 6, i + 8), 16);
+    codes.push({ code: dtcHex.toUpperCase(), status });
+  }
+  return codes;
+}
+
 function decodeBytes(raw, marker, numBytes) {
   const clean = cleanHex(raw);
   const idx = clean.indexOf(marker);
@@ -415,5 +449,37 @@ export class OBDBluetoothClient {
   async readMonitorStatus() {
     const raw = await this.sendCommand("0101");
     return parseMonitorStatus(raw);
+  }
+
+  // Talks UDS directly to one VAG chassis/body module over 29-bit extended
+  // CAN (experimental — see VAG_MODULES above). Always restores standard
+  // OBD addressing in `finally` so the rest of the app keeps working
+  // afterwards, even if this module never responds.
+  async readVagModuleDTCs(moduleAddr) {
+    const targetHex = moduleAddr.toString(16).padStart(2, "0").toUpperCase();
+    try {
+      await this.sendCommand("ATSP7").catch(() => {}); // ISO 15765-4 CAN, 29-bit ID, 500 kbaud
+      await this.sendCommand("ATSH18DA" + targetHex + "F1");
+      await this.sendCommand("ATCRA18DAF1" + targetHex);
+      await this.sendCommand("ATFCSH18DA" + targetHex + "F1").catch(() => {});
+      await this.sendCommand("1003").catch(() => {}); // extended diagnostic session (best-effort)
+      const raw = await this.sendCommand("1902FF", 4000);
+      return parseUdsDTCs(raw);
+    } finally {
+      await this.sendCommand("ATCRA").catch(() => {});
+      await this.sendCommand("ATSH7DF").catch(() => {});
+      await this.sendCommand("ATSP0").catch(() => {});
+    }
+  }
+
+  // Reads all known VAG modules in turn. Non-response from a module means
+  // "didn't answer at this address on this car" — NOT "no faults".
+  async readVagAllModules() {
+    const results = [];
+    for (const mod of VAG_MODULES) {
+      const codes = await this.readVagModuleDTCs(mod.addr).catch(() => null);
+      results.push({ ...mod, codes: codes ?? [], responded: codes !== null });
+    }
+    return results;
   }
 }

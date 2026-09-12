@@ -30,6 +30,7 @@ const BluetoothScanner = forwardRef(function BluetoothScanner({ onData, onStatus
   const [clearedAt, setClearedAt] = useState(0);
   const [liveMonitoring, setLiveMonitoring] = useState(false);
   const [liveData, setLiveData] = useState(null);
+  const [vagResults, setVagResults] = useState(null);
   const [rawLog, setRawLog] = useState([]);
   const [showRawLog, setShowRawLog] = useState(false);
   const clientRef = useRef(null);
@@ -151,6 +152,7 @@ const BluetoothScanner = forwardRef(function BluetoothScanner({ onData, onStatus
     setFoundCodes(null);
     setPermanentCodes(null);
     setPendingCodes(null);
+    setVagResults(null);
     setMonitorStatus(null);
     setVinStatus("");
     setOdometer(null);
@@ -242,6 +244,26 @@ const BluetoothScanner = forwardRef(function BluetoothScanner({ onData, onStatus
       setPendingCodes(codes);
     } catch (err) {
       setError(err.message || "Не удалось считать скрытые коды.");
+    } finally {
+      setBusy("");
+    }
+  };
+
+  const handleReadVagModules = async () => {
+    if (!clientRef.current) return;
+    setBusy("vag");
+    setError("");
+    setVagResults(null);
+    try {
+      const results = await clientRef.current.readVagAllModules();
+      setVagResults(results);
+      if (!results.some((r) => r.responded)) {
+        setError(
+          "Ни один модуль VAG не ответил на этой машине/поколении — экспериментальные адреса не подошли."
+        );
+      }
+    } catch (err) {
+      setError(err.message || "Не удалось опросить модули VAG.");
     } finally {
       setBusy("");
     }
@@ -435,6 +457,16 @@ const BluetoothScanner = forwardRef(function BluetoothScanner({ onData, onStatus
             </button>
             <button
               type="button"
+              onClick={handleReadVagModules}
+              disabled={busy !== "" || liveMonitoring}
+              className="col-span-2 flex items-center justify-center gap-1.5 rounded-lg border border-purple-500/30 bg-purple-500/10 py-2.5 text-xs text-purple-300 transition hover:bg-purple-500/20 disabled:opacity-60"
+              title="ABS, airbag, комфорт — только VAG (Škoda/VW/Audi/SEAT), экспериментально"
+            >
+              {busy === "vag" ? <Loader2 size={14} className="animate-spin" /> : <ShieldAlert size={14} />}
+              Модули VAG: ABS, airbag (эксперимент.)
+            </button>
+            <button
+              type="button"
               onClick={handleClearDTCs}
               disabled={busy !== "" || liveMonitoring}
               className="col-span-2 flex items-center justify-center gap-1.5 rounded-lg border border-red-500/30 bg-red-500/10 py-2.5 text-xs text-red-300 transition hover:bg-red-500/20 disabled:opacity-60"
@@ -517,6 +549,31 @@ const BluetoothScanner = forwardRef(function BluetoothScanner({ onData, onStatus
               ))}
             </div>
           )}
+        </div>
+      )}
+
+      {vagResults && (
+        <div className="mt-3 rounded-lg border border-purple-500/20 bg-purple-500/5 p-3">
+          <p className="mb-1.5 flex items-center gap-1.5 text-xs text-purple-300">
+            <ShieldAlert size={13} />
+            Модули VAG (ABS/airbag/комфорт) — только для Škoda/VW/Audi/SEAT, экспериментально:
+          </p>
+          <div className="space-y-1.5">
+            {vagResults.map((r) => (
+              <p key={r.addr} className="text-xs text-gray-400">
+                <span className="text-gray-300">{r.name}:</span>{" "}
+                {!r.responded
+                  ? "не ответил (не этот адрес/протокол на вашей машине)"
+                  : r.codes.length === 0
+                  ? "ответил, кодов нет"
+                  : r.codes.map((c) => `${c.code} (статус 0x${c.status.toString(16).padStart(2, "0")})`).join(", ")}
+              </p>
+            ))}
+          </div>
+          <p className="mt-2 text-[11px] text-gray-600">
+            Коды показаны как есть в шестнадцатеричном виде — публичной проверенной базы
+            расшифровки этих кодов для модулей VAG нет, в отличие от стандартных кодов двигателя.
+          </p>
         </div>
       )}
 
