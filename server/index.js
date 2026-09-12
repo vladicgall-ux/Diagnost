@@ -3,6 +3,7 @@ import cors from "cors";
 import dotenv from "dotenv";
 import Groq from "groq-sdk";
 import { DIAGNOSE_SYSTEM_PROMPT, CHAT_SYSTEM_PROMPT } from "./prompts.js";
+import { describeGroqError } from "./groqError.js";
 import {
   timingSafeEqualStr,
   signSession,
@@ -137,7 +138,7 @@ ${
     res.json({ report: parsed });
   } catch (err) {
     console.error("diagnose error:", err);
-    res.status(500).json({ error: "Ошибка при обращении к ИИ-диагносту. Попробуйте ещё раз." });
+    res.status(500).json({ error: describeGroqError(err) });
   }
 });
 
@@ -165,7 +166,7 @@ app.post("/api/chat", requireApiRateLimit, requireSession, async (req, res) => {
     res.json({ reply });
   } catch (err) {
     console.error("chat error:", err);
-    res.status(500).json({ error: "Ошибка при обращении к ИИ-диагносту. Попробуйте ещё раз." });
+    res.status(500).json({ error: describeGroqError(err) });
   }
 });
 

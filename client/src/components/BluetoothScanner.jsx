@@ -1,7 +1,19 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
-import { Bluetooth, BluetoothConnected, Loader2, ScanLine, Gauge, Unplug, IdCard, Eraser, CheckCircle2, Route, ShieldAlert, ClipboardCheck } from "lucide-react";
+import { Bluetooth, BluetoothConnected, Loader2, ScanLine, Gauge, Unplug, IdCard, Eraser, CheckCircle2, Route, ShieldAlert, ClipboardCheck, Play, Square, Bug } from "lucide-react";
 import { OBDBluetoothClient } from "../lib/obd";
 import { decodeVIN } from "../lib/vinDecode";
+
+const LIVE_TILES = [
+  { key: "rpm", label: "Обороты", unit: "об/мин" },
+  { key: "speed", label: "Скорость", unit: "км/ч" },
+  { key: "coolantTemp", label: "Темп. ОЖ", unit: "°C" },
+  { key: "engineLoad", label: "Нагрузка", unit: "%" },
+  { key: "throttlePosition", label: "Дроссель", unit: "%" },
+  { key: "intakeMAP", label: "Давление", unit: "кПа" },
+  { key: "intakeAirTemp", label: "Темп. воздуха", unit: "°C" },
+  { key: "stft", label: "Быстр. коррекция", unit: "%" },
+  { key: "ltft", label: "Долгая коррекция", unit: "%" },
+];
 
 const BluetoothScanner = forwardRef(function BluetoothScanner({ onData, onStatusChange }, ref) {
   const [supported] = useState(() => OBDBluetoothClient.isSupported());
@@ -15,10 +27,18 @@ const BluetoothScanner = forwardRef(function BluetoothScanner({ onData, onStatus
   const [vinStatus, setVinStatus] = useState(""); // "" | "reading" | "done" | "failed"
   const [odometer, setOdometer] = useState(null); // number | "unsupported" | null
   const [clearedAt, setClearedAt] = useState(0);
+  const [liveMonitoring, setLiveMonitoring] = useState(false);
+  const [liveData, setLiveData] = useState(null);
+  const [rawLog, setRawLog] = useState([]);
+  const [showRawLog, setShowRawLog] = useState(false);
   const clientRef = useRef(null);
+  const liveMonitorRef = useRef(false);
 
   useEffect(() => {
-    return () => clientRef.current?.disconnect();
+    return () => {
+      liveMonitorRef.current = false;
+      clientRef.current?.disconnect();
+    };
   }, []);
 
   useImperativeHandle(ref, () => ({
@@ -59,9 +79,14 @@ const BluetoothScanner = forwardRef(function BluetoothScanner({ onData, onStatus
   const handleConnect = async () => {
     setError("");
     setStatus("connecting");
+    setRawLog([]);
     try {
       const client = new OBDBluetoothClient();
+      client.onLog = (entry) => setRawLog((log) => [...log.slice(-19), entry]);
       client.onDisconnected = () => {
+        liveMonitorRef.current = false;
+        setLiveMonitoring(false);
+        setLiveData(null);
         setStatus("idle");
         setDeviceName("");
         setVinStatus("");
@@ -111,6 +136,9 @@ const BluetoothScanner = forwardRef(function BluetoothScanner({ onData, onStatus
   };
 
   const handleDisconnect = () => {
+    liveMonitorRef.current = false;
+    setLiveMonitoring(false);
+    setLiveData(null);
     clientRef.current?.disconnect();
     clientRef.current = null;
     setStatus("idle");
@@ -121,6 +149,31 @@ const BluetoothScanner = forwardRef(function BluetoothScanner({ onData, onStatus
     setVinStatus("");
     setOdometer(null);
     onStatusChange?.(false);
+  };
+
+  const handleToggleLiveMonitor = async () => {
+    if (liveMonitorRef.current) {
+      liveMonitorRef.current = false;
+      setLiveMonitoring(false);
+      return;
+    }
+    if (!clientRef.current) return;
+    liveMonitorRef.current = true;
+    setLiveMonitoring(true);
+    setError("");
+    while (liveMonitorRef.current && clientRef.current) {
+      try {
+        const data = await clientRef.current.readLiveSensors();
+        if (!liveMonitorRef.current) break;
+        setLiveData(data);
+      } catch (err) {
+        if (!liveMonitorRef.current) break;
+        setError(err.message || "Не удалось считать показания в реальном времени.");
+        break;
+      }
+    }
+    liveMonitorRef.current = false;
+    setLiveMonitoring(false);
   };
 
   const handleReadDTCs = async () => {
@@ -283,11 +336,39 @@ const BluetoothScanner = forwardRef(function BluetoothScanner({ onData, onStatus
             </p>
           )}
 
+          <button
+            type="button"
+            onClick={handleToggleLiveMonitor}
+            disabled={busy !== ""}
+            className={`mt-3 flex w-full items-center justify-center gap-2 rounded-lg border py-2.5 text-sm transition disabled:opacity-60 ${
+              liveMonitoring
+                ? "border-orange-500/50 bg-orange-500/15 text-orange-300 hover:bg-orange-500/20"
+                : "border-white/10 bg-white/5 text-gray-300 hover:bg-white/10"
+            }`}
+          >
+            {liveMonitoring ? <Square size={14} /> : <Play size={14} />}
+            {liveMonitoring ? "Остановить реальное время" : "Показатели в реальном времени"}
+          </button>
+
+          {liveMonitoring && (
+            <div className="mt-2 grid grid-cols-3 gap-2">
+              {LIVE_TILES.map((t) => (
+                <div key={t.key} className="rounded-lg border border-white/10 bg-black/20 p-2 text-center">
+                  <p className="text-[10px] uppercase tracking-wide text-gray-500">{t.label}</p>
+                  <p className="font-mono text-base text-orange-300">
+                    {liveData?.[t.key] === "" || liveData?.[t.key] === undefined ? "—" : liveData[t.key]}
+                  </p>
+                  <p className="text-[10px] text-gray-600">{t.unit}</p>
+                </div>
+              ))}
+            </div>
+          )}
+
           <div className="mt-2 grid grid-cols-2 gap-2">
             <button
               type="button"
               onClick={handleReadDTCs}
-              disabled={busy !== ""}
+              disabled={busy !== "" || liveMonitoring}
               className="flex items-center justify-center gap-1.5 rounded-lg border border-blue-500/30 bg-blue-500/10 py-2.5 text-xs text-blue-300 transition hover:bg-blue-500/20 disabled:opacity-60"
             >
               {busy === "dtc" ? <Loader2 size={14} className="animate-spin" /> : <ScanLine size={14} />}
@@ -296,7 +377,7 @@ const BluetoothScanner = forwardRef(function BluetoothScanner({ onData, onStatus
             <button
               type="button"
               onClick={handleReadLiveSensors}
-              disabled={busy !== ""}
+              disabled={busy !== "" || liveMonitoring}
               className="flex items-center justify-center gap-1.5 rounded-lg border border-green-500/30 bg-green-500/10 py-2.5 text-xs text-green-300 transition hover:bg-green-500/20 disabled:opacity-60"
             >
               {busy === "ff" ? <Loader2 size={14} className="animate-spin" /> : <Gauge size={14} />}
@@ -305,7 +386,7 @@ const BluetoothScanner = forwardRef(function BluetoothScanner({ onData, onStatus
             <button
               type="button"
               onClick={handleReadPermanentDTCs}
-              disabled={busy !== ""}
+              disabled={busy !== "" || liveMonitoring}
               className="flex items-center justify-center gap-1.5 rounded-lg border border-red-500/30 bg-red-500/10 py-2.5 text-xs text-red-300 transition hover:bg-red-500/20 disabled:opacity-60"
               title="Коды, которые нельзя стереть сбросом — полезно для проверки б/у авто"
             >
@@ -315,7 +396,7 @@ const BluetoothScanner = forwardRef(function BluetoothScanner({ onData, onStatus
             <button
               type="button"
               onClick={handleReadMonitorStatus}
-              disabled={busy !== ""}
+              disabled={busy !== "" || liveMonitoring}
               className="flex items-center justify-center gap-1.5 rounded-lg border border-blue-500/30 bg-blue-500/10 py-2.5 text-xs text-blue-300 transition hover:bg-blue-500/20 disabled:opacity-60"
             >
               {busy === "monitors" ? <Loader2 size={14} className="animate-spin" /> : <ClipboardCheck size={14} />}
@@ -324,7 +405,7 @@ const BluetoothScanner = forwardRef(function BluetoothScanner({ onData, onStatus
             <button
               type="button"
               onClick={handleClearDTCs}
-              disabled={busy !== ""}
+              disabled={busy !== "" || liveMonitoring}
               className="col-span-2 flex items-center justify-center gap-1.5 rounded-lg border border-red-500/30 bg-red-500/10 py-2.5 text-xs text-red-300 transition hover:bg-red-500/20 disabled:opacity-60"
             >
               {busy === "clear" ? <Loader2 size={14} className="animate-spin" /> : <Eraser size={14} />}
@@ -410,6 +491,31 @@ const BluetoothScanner = forwardRef(function BluetoothScanner({ onData, onStatus
       )}
 
       {error && <p className="mt-3 text-xs text-red-400">{error}</p>}
+
+      {status === "connected" && rawLog.length > 0 && (
+        <div className="mt-3">
+          <button
+            type="button"
+            onClick={() => setShowRawLog((v) => !v)}
+            className="flex items-center gap-1.5 text-[11px] text-gray-600 hover:text-gray-400"
+          >
+            <Bug size={11} /> {showRawLog ? "Скрыть" : "Показать"} сырые данные адаптера (для отладки)
+          </button>
+          {showRawLog && (
+            <div className="mt-2 max-h-48 overflow-y-auto rounded-lg border border-white/10 bg-black/30 p-2 font-mono text-[10px] leading-relaxed text-gray-500">
+              {rawLog.map((entry, i) => (
+                <div key={i} className="mb-1">
+                  <span className="text-blue-400">{`> ${entry.cmd}`}</span>
+                  <br />
+                  <span className="whitespace-pre-wrap break-all text-gray-400">
+                    {JSON.stringify(entry.raw)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 });

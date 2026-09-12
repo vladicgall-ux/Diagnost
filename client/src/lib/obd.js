@@ -21,6 +21,18 @@ const PROFILES = [
     write: "0000ffe1-0000-1000-8000-00805f9b34fb",
     notify: "0000ffe1-0000-1000-8000-00805f9b34fb",
   },
+  {
+    // ISSC/Microchip transparent UART — used by some Vgate/Veepeak boards
+    service: "49535343-fe7d-4ae5-8fa9-9fafd205e455",
+    write: "49535343-8841-43f4-a8d4-ecbe34729bb3",
+    notify: "49535343-1e4d-4bd9-ba61-23c647249616",
+  },
+  {
+    // FEE0/FEE1/FEE2 — seen on some cheap Chinese BLE OBD boards
+    service: "0000fee0-0000-1000-8000-00805f9b34fb",
+    write: "0000fee2-0000-1000-8000-00805f9b34fb",
+    notify: "0000fee1-0000-1000-8000-00805f9b34fb",
+  },
 ];
 
 const ALL_SERVICE_UUIDS = [...new Set(PROFILES.map((p) => p.service))];
@@ -174,6 +186,7 @@ export class OBDBluetoothClient {
     this.buffer = "";
     this._pending = null;
     this.onDisconnected = null;
+    this.onLog = null; // ({cmd, raw}) => void — every raw command/response pair, for diagnosing a specific adapter
   }
 
   static isSupported() {
@@ -280,7 +293,13 @@ export class OBDBluetoothClient {
         this._pending = null;
         reject(new Error(`Таймаут ответа адаптера на команду ${cmd}`));
       }, timeoutMs);
-      this._pending = { resolve, timer };
+      this._pending = {
+        resolve: (raw) => {
+          this.onLog?.({ cmd, raw });
+          resolve(raw);
+        },
+        timer,
+      };
       this._writeRaw(cmd).catch((err) => {
         clearTimeout(timer);
         this._pending = null;
@@ -294,6 +313,8 @@ export class OBDBluetoothClient {
     await this.sendCommand("ATE0");
     await this.sendCommand("ATL0");
     await this.sendCommand("ATH0");
+    await this.sendCommand("ATS0").catch(() => {});
+    await this.sendCommand("ATCAF1").catch(() => {});
     await this.sendCommand("ATSP0");
   }
 
@@ -319,7 +340,12 @@ export class OBDBluetoothClient {
 
   async readVIN() {
     const raw = await this.sendCommand("0902", 6000);
-    return parseVIN(raw);
+    const vin = parseVIN(raw);
+    if (vin) return vin;
+    // A blank/garbled first read is common on cheap BLE clones (a dropped
+    // BLE packet corrupts one multi-frame response) — one retry often works.
+    const retryRaw = await this.sendCommand("0902", 6000).catch(() => "");
+    return parseVIN(retryRaw);
   }
 
   // Reads the mileage as currently stored in the vehicle's own control
@@ -329,7 +355,10 @@ export class OBDBluetoothClient {
   // this PID (added to the standard only for newer/certain-market cars).
   async readOdometer() {
     const raw = await this.sendCommand("01A6");
-    return parseOdometer(raw);
+    const km = parseOdometer(raw);
+    if (km !== null) return km;
+    const retryRaw = await this.sendCommand("01A6").catch(() => "");
+    return parseOdometer(retryRaw);
   }
 
   // Mode 04: clears stored DTCs, turns off the Check Engine light, and

@@ -1,6 +1,7 @@
 import Groq from "groq-sdk";
 import { DIAGNOSE_SYSTEM_PROMPT } from "../server/prompts.js";
 import { verifySession, parseCookies, SESSION_COOKIE_NAME, makeRateLimiter, getClientIp } from "../server/auth.js";
+import { describeGroqError } from "../server/groqError.js";
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 const MODEL = "openai/gpt-oss-120b";
@@ -80,6 +81,6 @@ ${
     res.status(200).json({ report: JSON.parse(raw) });
   } catch (err) {
     console.error("diagnose error:", err);
-    res.status(500).json({ error: "Ошибка при обращении к ИИ-диагносту. Попробуйте ещё раз." });
+    res.status(500).json({ error: describeGroqError(err) });
   }
 }
