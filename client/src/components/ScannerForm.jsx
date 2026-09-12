@@ -33,6 +33,7 @@ export default function ScannerForm({ onDiagnose, loading, obdConnected, obdRef,
   const [obdError, setObdError] = useState("");
   const [foundCodes, setFoundCodes] = useState(null);
   const [permanentCodes, setPermanentCodes] = useState(null);
+  const [pendingCodes, setPendingCodes] = useState(null);
 
   const [makeCustom, setMakeCustom] = useState(false);
   const [modelCustom, setModelCustom] = useState(false);
@@ -98,26 +99,39 @@ export default function ScannerForm({ onDiagnose, loading, obdConnected, obdRef,
     }
   };
 
-  const diagnoseCode = (code, ff, permanent) => {
+  const diagnoseCode = (code, ff, permanent, pending, isPending) => {
     setDtc(code);
     setDtcError("");
-    onDiagnose({ vehicle, dtc: code, freezeFrame: ff, permanentCodes: permanent ?? permanentCodes ?? [] });
+    onDiagnose({
+      vehicle,
+      dtc: code,
+      freezeFrame: ff,
+      permanentCodes: permanent ?? permanentCodes ?? [],
+      pendingCodes: pending ?? pendingCodes ?? [],
+      isPending: !!isPending,
+    });
   };
 
   const runFromOBD = async () => {
     setObdError("");
     setFoundCodes(null);
     setPermanentCodes(null);
+    setPendingCodes(null);
     setObdBusy(true);
     try {
       const codes = await obdRef.current.readDTCs();
-      if (codes.length === 0) {
-        setObdError("Сканер не нашёл активных ошибок в этой машине.");
+      // Mode 07: codes the computer already noticed but hasn't confirmed
+      // enough to light Check Engine yet — the "hidden" errors.
+      const pending = await obdRef.current.readPendingDTCs().catch(() => []);
+      const permanent = await obdRef.current.readPermanentDTCs().catch(() => []);
+
+      if (codes.length === 0 && pending.length === 0 && permanent.length === 0) {
+        setObdError("Сканер не нашёл ни активных, ни скрытых ошибок в этой машине.");
         return;
       }
-      setFoundCodes(codes);
 
-      const permanent = await obdRef.current.readPermanentDTCs().catch(() => []);
+      setFoundCodes(codes);
+      setPendingCodes(pending);
       setPermanentCodes(permanent);
 
       // Prefer the real stored freeze frame (values at the moment the fault
@@ -127,7 +141,11 @@ export default function ScannerForm({ onDiagnose, loading, obdConnected, obdRef,
       if (!ff) ff = await obdRef.current.readLiveSensors().catch(() => freezeFrame);
       setFreezeFrame(ff);
 
-      diagnoseCode(codes[0], ff, permanent);
+      if (codes.length > 0) {
+        diagnoseCode(codes[0], ff, permanent, pending, false);
+      } else {
+        diagnoseCode(pending[0], ff, permanent, pending, true);
+      }
     } catch (err) {
       setObdError(err.message || "Не удалось считать данные с автомобиля.");
     } finally {
@@ -313,29 +331,59 @@ export default function ScannerForm({ onDiagnose, loading, obdConnected, obdRef,
         </p>
       )}
 
-      {foundCodes && (
+      {((foundCodes && foundCodes.length > 0) || (pendingCodes && pendingCodes.length > 0)) && (
         <div className="rounded-xl border border-white/10 bg-[#12141b] p-3.5">
-          <p className="mb-2 flex items-center gap-1.5 text-xs text-gray-400">
-            <ScanLine size={13} className="text-orange-400" />
-            Считано с автомобиля: {foundCodes.length} {foundCodes.length === 1 ? "код" : "кода"}.
-            {foundCodes.length > 1 && " Показан диагноз по первому — можно посмотреть другой:"}
-          </p>
-          <div className="flex flex-wrap gap-2">
-            {foundCodes.map((c) => (
-              <button
-                key={c}
-                type="button"
-                onClick={() => diagnoseCode(c, freezeFrame, permanentCodes)}
-                className={`rounded-full border px-3 py-1.5 font-mono text-xs transition ${
-                  c === dtc
-                    ? "border-orange-500/50 bg-orange-500/15 text-orange-300"
-                    : "border-blue-500/30 bg-blue-500/10 text-blue-300 hover:bg-blue-500/20"
-                }`}
-              >
-                {c}
-              </button>
-            ))}
-          </div>
+          {foundCodes && foundCodes.length > 0 && (
+            <>
+              <p className="mb-2 flex items-center gap-1.5 text-xs text-gray-400">
+                <ScanLine size={13} className="text-orange-400" />
+                Активные ошибки (Check Engine горит): {foundCodes.length}.
+                {foundCodes.length > 1 && " Показан диагноз по первой — можно посмотреть другую:"}
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {foundCodes.map((c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    onClick={() => diagnoseCode(c, freezeFrame, permanentCodes, pendingCodes, false)}
+                    className={`rounded-full border px-3 py-1.5 font-mono text-xs transition ${
+                      c === dtc
+                        ? "border-orange-500/50 bg-orange-500/15 text-orange-300"
+                        : "border-blue-500/30 bg-blue-500/10 text-blue-300 hover:bg-blue-500/20"
+                    }`}
+                  >
+                    {c}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+
+          {pendingCodes && pendingCodes.length > 0 && (
+            <>
+              <p className={`mb-2 flex items-center gap-1.5 text-xs text-yellow-400 ${foundCodes && foundCodes.length > 0 ? "mt-3" : ""}`}>
+                <ScanLine size={13} className="text-yellow-400" />
+                Скрытые ошибки (Check Engine ещё не горит): {pendingCodes.length}.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {pendingCodes.map((c) => (
+                  <button
+                    key={c}
+                    type="button"
+                    onClick={() => diagnoseCode(c, freezeFrame, permanentCodes, pendingCodes, true)}
+                    className={`rounded-full border px-3 py-1.5 font-mono text-xs transition ${
+                      c === dtc
+                        ? "border-orange-500/50 bg-orange-500/15 text-orange-300"
+                        : "border-yellow-500/30 bg-yellow-500/10 text-yellow-300 hover:bg-yellow-500/20"
+                    }`}
+                  >
+                    {c}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+
           {permanentCodes && permanentCodes.length > 0 && (
             <p className="mt-2.5 text-xs text-red-400">
               Плюс {permanentCodes.length} {permanentCodes.length === 1 ? "постоянный код" : "постоянных кода"}{" "}

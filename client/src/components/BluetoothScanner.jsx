@@ -23,6 +23,7 @@ const BluetoothScanner = forwardRef(function BluetoothScanner({ onData, onStatus
   const [error, setError] = useState("");
   const [foundCodes, setFoundCodes] = useState(null);
   const [permanentCodes, setPermanentCodes] = useState(null);
+  const [pendingCodes, setPendingCodes] = useState(null);
   const [monitorStatus, setMonitorStatus] = useState(null);
   const [vinStatus, setVinStatus] = useState(""); // "" | "reading" | "done" | "failed"
   const [odometer, setOdometer] = useState(null); // number | "unsupported" | null
@@ -50,6 +51,10 @@ const BluetoothScanner = forwardRef(function BluetoothScanner({ onData, onStatus
     readPermanentDTCs: () => {
       if (!clientRef.current) throw new Error("Адаптер не подключён.");
       return clientRef.current.readPermanentDTCs();
+    },
+    readPendingDTCs: () => {
+      if (!clientRef.current) throw new Error("Адаптер не подключён.");
+      return clientRef.current.readPendingDTCs();
     },
     readLiveSensors: () => {
       if (!clientRef.current) throw new Error("Адаптер не подключён.");
@@ -145,6 +150,7 @@ const BluetoothScanner = forwardRef(function BluetoothScanner({ onData, onStatus
     setDeviceName("");
     setFoundCodes(null);
     setPermanentCodes(null);
+    setPendingCodes(null);
     setMonitorStatus(null);
     setVinStatus("");
     setOdometer(null);
@@ -221,6 +227,21 @@ const BluetoothScanner = forwardRef(function BluetoothScanner({ onData, onStatus
       setPermanentCodes(codes);
     } catch (err) {
       setError(err.message || "Не удалось считать постоянные коды.");
+    } finally {
+      setBusy("");
+    }
+  };
+
+  const handleReadPendingDTCs = async () => {
+    if (!clientRef.current) return;
+    setBusy("pending");
+    setError("");
+    setPendingCodes(null);
+    try {
+      const codes = await clientRef.current.readPendingDTCs();
+      setPendingCodes(codes);
+    } catch (err) {
+      setError(err.message || "Не удалось считать скрытые коды.");
     } finally {
       setBusy("");
     }
@@ -395,6 +416,16 @@ const BluetoothScanner = forwardRef(function BluetoothScanner({ onData, onStatus
             </button>
             <button
               type="button"
+              onClick={handleReadPendingDTCs}
+              disabled={busy !== "" || liveMonitoring}
+              className="flex items-center justify-center gap-1.5 rounded-lg border border-yellow-500/30 bg-yellow-500/10 py-2.5 text-xs text-yellow-300 transition hover:bg-yellow-500/20 disabled:opacity-60"
+              title="Коды, которые ещё не зажгли Check Engine — компьютер их уже заметил"
+            >
+              {busy === "pending" ? <Loader2 size={14} className="animate-spin" /> : <ShieldAlert size={14} />}
+              Скрытые ошибки
+            </button>
+            <button
+              type="button"
               onClick={handleReadMonitorStatus}
               disabled={busy !== "" || liveMonitoring}
               className="flex items-center justify-center gap-1.5 rounded-lg border border-blue-500/30 bg-blue-500/10 py-2.5 text-xs text-blue-300 transition hover:bg-blue-500/20 disabled:opacity-60"
@@ -461,6 +492,26 @@ const BluetoothScanner = forwardRef(function BluetoothScanner({ onData, onStatus
             <div className="flex flex-wrap gap-2">
               {permanentCodes.map((c) => (
                 <span key={c} className="rounded-full border border-red-500/30 bg-red-500/10 px-3 py-1 font-mono text-xs text-red-300">
+                  {c}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {pendingCodes && (
+        <div className="mt-3 rounded-lg border border-yellow-500/20 bg-yellow-500/5 p-3">
+          <p className="mb-1.5 flex items-center gap-1.5 text-xs text-yellow-300">
+            <ShieldAlert size={13} />
+            {pendingCodes.length === 0
+              ? "Скрытых кодов нет."
+              : `Скрытые коды (${pendingCodes.length}) — Check Engine ещё не горит, но компьютер уже их заметил:`}
+          </p>
+          {pendingCodes.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {pendingCodes.map((c) => (
+                <span key={c} className="rounded-full border border-yellow-500/30 bg-yellow-500/10 px-3 py-1 font-mono text-xs text-yellow-300">
                   {c}
                 </span>
               ))}

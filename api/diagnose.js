@@ -27,7 +27,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { vehicle, dtc, freezeFrame, permanentCodes } = req.body || {};
+    const { vehicle, dtc, freezeFrame, permanentCodes, pendingCodes, isPending } = req.body || {};
 
     if (!dtc || !DTC_REGEX.test(String(dtc).trim())) {
       res.status(400).json({ error: "Некорректный формат кода ошибки. Пример: P0300" });
@@ -63,6 +63,17 @@ ${
   Array.isArray(permanentCodes) && permanentCodes.length > 0
     ? `Постоянные коды ошибок (не стираются сбросом или отключением батареи, указывают на давнюю/подтверждённую неисправность): ${permanentCodes.join(", ")}`
     : "Постоянных кодов нет."
+}
+
+${
+  isPending
+    ? `Статус диагностируемого кода ${dtc}: ОЖИДАЮЩИЙ (Mode 07). Лампа Check Engine ЕЩЁ НЕ горит — компьютер уже заметил неисправность, но не подтвердил её достаточным числом циклов поездки. Учти это при оценке срочности: это ранний сигнал, а не подтверждённая неисправность.`
+    : `Статус диагностируемого кода ${dtc}: активный, подтверждённый (Check Engine горит).`
+}
+${
+  Array.isArray(pendingCodes) && pendingCodes.length > 0
+    ? `Прочие скрытые (ожидающие, Mode 07) коды на этой машине, не показанные пользователю через Check Engine: ${pendingCodes.join(", ")}`
+    : ""
 }
 
 Дай диагностику строго в формате JSON, описанном в системном промпте.`;
