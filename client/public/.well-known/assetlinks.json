@@ -1,0 +1,8 @@
+[{
+  "relation": ["delegate_permission/common.handle_all_urls"],
+  "target": {
+    "namespace": "android_app",
+    "package_name": "com.autodiagnost.app",
+    "sha256_cert_fingerprints": ["AA:EF:A7:9B:88:74:EC:F3:90:F5:F2:0B:21:0B:01:25:35:7E:8F:B2:72:34:F2:13:16:20:BF:DC:18:DD:0B:37"]
+  }
+}]
